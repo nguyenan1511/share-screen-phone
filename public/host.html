@@ -523,7 +523,11 @@
           selfBrowserSurface: 'exclude',
         });
       } catch (err) {
-        $('shareState').textContent = `cancelled (${err.name})`;
+        // AbortError / NotAllowedError: the picker was closed, or (in the Mac app) Screen Recording isn't allowed.
+        $('shareState').textContent = 'not sharing';
+        $('modeHint').innerHTML = inDesktopApp
+          ? 'Sharing didn\'t start. If you didn\'t cancel it, Tether needs <b>Screen Recording</b> permission: <a href="/install#s3" target="_blank">how to allow it</a>.'
+          : 'Sharing was cancelled. Click Share screen to try again.';
         return;
       }
       displayTrack = displayStream.getVideoTracks()[0];

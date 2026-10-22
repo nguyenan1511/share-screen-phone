@@ -1,6 +1,6 @@
 // Tether for Mac (Electron): runs the same local server as `npm start`, with the prebuilt macOS
 // helper, and shows the laptop page in its own window. Phones still connect to this Mac over Wi-Fi.
-import { app, BrowserWindow, desktopCapturer, dialog, session, shell } from 'electron';
+import { app, BrowserWindow, desktopCapturer, dialog, session, shell, systemPreferences } from 'electron';
 import path from 'node:path';
 
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -14,11 +14,35 @@ const serverReady = globalThis.tetherServerReady;
 
 let win = null;
 
+const SCREEN_RECORDING_SETTINGS = 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
+
+// Without Screen Recording permission macOS gives the app no screens at all. Say so (with a way to fix it)
+// instead of failing silently. Ad-hoc signed builds count as a new app after every update, so this can
+// also happen when Tether still looks switched on in System Settings.
+async function explainScreenPermission() {
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning',
+    message: 'Tether needs Screen Recording permission',
+    detail:
+      'Open System Settings → Privacy & Security → Screen & System Audio Recording and turn on Tether, ' +
+      'then quit and reopen Tether.\n\nAlready on? After an update macOS may not count it: select Tether, ' +
+      'remove it with −, add it again with +, then reopen Tether.',
+    buttons: ['Open System Settings', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response === 0) shell.openExternal(SCREEN_RECORDING_SETTINGS);
+}
+
 // Share screen: when the iPhone screen exists, share it right away (no picker). Otherwise ask which screen.
 function handleScreenRequests(port) {
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
     try {
       const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
+      if (!sources.length || systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+        callback({});
+        return explainScreenPermission();
+      }
       const display = await fetch(`http://localhost:${port}/api/display`).then((r) => r.json()).catch(() => null);
       const iphone = display?.active && sources.find((s) => s.display_id === String(display.displayID));
       if (iphone) return callback({ video: iphone });
