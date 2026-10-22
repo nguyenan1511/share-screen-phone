@@ -7,7 +7,7 @@ import { app, Notification, shell } from 'electron';
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createWriteStream, writeFileSync } from 'node:fs';
-import { access, constants, mkdir, rm, stat } from 'node:fs/promises';
+import { access, constants, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
@@ -83,6 +83,44 @@ fi
 [ "$REOPEN" = "1" ] && open "$APP"
 exit 0
 `;
+
+// Remove every trace of earlier versions. Runs at each launch of the packaged app:
+//  - update downloads and the installer script left in the temp folder
+//  - a Tether.app.old left behind by an interrupted swap
+//  - mounted Tether installer disks (old .dmg windows) — never the one Tether runs from
+//  - after an update: Tether's own stale Screen Recording entries, so System Settings doesn't keep showing an
+//    old "Tether" that looks on but no longer works; macOS asks fresh on the next share
+export async function cleanUpOldVersions() {
+  if (!app.isPackaged) return;
+  const appPath = path.resolve(process.execPath, '..', '..', '..');
+  const temp = app.getPath('temp');
+  const plistOf = (bundle) => path.join(bundle, 'Contents', 'Info.plist');
+  const readPlist = (bundle, key) => run('/usr/bin/plutil', ['-extract', key, 'raw', '-o', '-', plistOf(bundle)]).catch(() => '');
+  const bundleId = await readPlist(appPath, 'CFBundleIdentifier');
+
+  const entries = await readdir(temp).catch(() => []);
+  for (const name of entries) {
+    if (name.startsWith('tether-update-') || name === 'tether-install.sh') await rm(path.join(temp, name), { recursive: true, force: true });
+  }
+  await rm(`${appPath}.old`, { recursive: true, force: true });
+
+  if (bundleId && !appPath.startsWith('/Volumes/')) {
+    for (const vol of await readdir('/Volumes').catch(() => [])) {
+      const mounted = path.join('/Volumes', vol);
+      if ((await readPlist(path.join(mounted, 'Tether.app'), 'CFBundleIdentifier')) === bundleId) {
+        await run('/usr/bin/hdiutil', ['detach', mounted]).catch(() => {}); // busy disks just stay mounted
+      }
+    }
+  }
+
+  const marker = path.join(app.getPath('userData'), 'last-version');
+  const previous = (await readFile(marker, 'utf8').catch(() => '')).trim();
+  const current = app.getVersion();
+  if (previous && previous !== current && bundleId) {
+    await run('/usr/bin/tccutil', ['reset', 'ScreenCapture', bundleId]).catch(() => {});
+  }
+  if (previous !== current) await writeFile(marker, current).catch(() => {});
+}
 
 /**
  * @param {{ feedUrl: string, downloadUrl: string, isBusy: () => Promise<boolean>, onStatus: (s: object) => void }} opts

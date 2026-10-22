@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startUpdater } from './updater.js';
+import { cleanUpOldVersions, startUpdater } from './updater.js';
 
 // Update feed and download link live in package.json ("tether"), so changing the bucket is one edit.
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -153,4 +153,7 @@ app.on('second-instance', () => {
 // (the server's exit handler removes the iPhone screen and brings the cursor home).
 app.on('window-all-closed', () => app.quit());
 
-app.whenReady().then(openWindow);
+app.whenReady().then(() => {
+  cleanUpOldVersions().catch(() => {});
+  return openWindow();
+});
