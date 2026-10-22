@@ -22,7 +22,7 @@ if (HOSTED && !redisConfigured) {
 const PREFERRED_PORT = Number(process.env.PORT) || 3001;
 let PORT = PREFERRED_PORT;
 const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url));
-const ROUTES = { '/': 'host.html', '/view': 'view.html', '/zone': 'zone.html' };
+const ROUTES = { '/': 'host.html', '/view': 'view.html', '/zone': 'zone.html', '/install': 'install.html' };
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',

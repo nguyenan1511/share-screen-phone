@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install Tether on your Mac</title>
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="host">
+  <nav class="global-nav" aria-label="App">
+    <div class="global-nav-inner">
+      <a class="app-name" href="/" style="color:#fff">Tether</a>
+      <span class="nav-meta">Install guide</span>
+    </div>
+  </nav>
+
+  <main class="page guide">
+    <header class="hero">
+      <h1>Install Tether on your Mac.</h1>
+      <p>About two minutes, once. After this, Tether opens like any other app.</p>
+    </header>
+
+    <section class="card notice" aria-labelledby="noticeTitle">
+      <h2 id="noticeTitle" class="side-title">Why macOS shows a warning.</h2>
+      <p class="body-copy">Tether isn't verified by Apple yet, so the first time you open it macOS says: <i>Apple could not verify “Tether” is free of malware that may harm your Mac or compromise your privacy.</i> That's the standard message for any app Apple hasn't checked yet. It doesn't mean something is wrong with Tether.</p>
+      <p class="body-copy">We're getting Tether verified (notarized) by Apple and will update the app as soon as possible. After that update, you won't need any of the steps below.</p>
+    </section>
+
+    <ol class="sections guide-steps">
+      <li class="card" aria-labelledby="s1">
+        <h2 id="s1" class="step-title"><span class="step-n">1</span>Install. <span>Put Tether in Applications.</span></h2>
+        <ol class="guide-list">
+          <li>Download <b>Tether.dmg</b> and open it.</li>
+          <li>Drag <b>Tether</b> onto the <b>Applications</b> folder.</li>
+          <li>Eject the Tether disk in Finder (optional).</li>
+        </ol>
+        <div class="row">
+          <a class="pill pill-primary" href="https://github.com/nguyenan1511/share-screen-phone/releases/latest/download/Tether.dmg">Download Tether.dmg</a>
+          <span class="hint">macOS 13 or later · Apple silicon and Intel</span>
+        </div>
+      </li>
+
+      <li class="card" aria-labelledby="s2">
+        <h2 id="s2" class="step-title"><span class="step-n">2</span>First open. <span>Allow it once in System Settings.</span></h2>
+        <ol class="guide-list">
+          <li>Open <b>Applications</b> and double-click <b>Tether</b>. When the warning appears, click <b>Done</b>. Don't click <b>Move to Trash</b>.</li>
+          <li>Open <b>System Settings</b> → <b>Privacy &amp; Security</b> and scroll down to the <b>Security</b> section.</li>
+          <li>Next to the message <i>“Tether” was blocked to protect your Mac</i>, click <b>Open Anyway</b> and enter your Mac password (or use Touch ID).</li>
+          <li>Open Tether again and click <b>Open</b>. From now on it opens normally.</li>
+        </ol>
+        <p class="tip"><b>macOS 15 or later:</b> right-click → Open no longer skips this warning. It has to be done in System Settings as above. The <b>Open Anyway</b> button shows up for about an hour after the warning; if you don't see it, open Tether once more and check again.</p>
+      </li>
+
+      <li class="card" aria-labelledby="s3">
+        <h2 id="s3" class="step-title"><span class="step-n">3</span>Screen Recording. <span>Needed to show your screen on the iPhone.</span></h2>
+        <ol class="guide-list">
+          <li>In Tether, add the iPhone screen and click <b>Share screen</b>. macOS asks to allow screen recording.</li>
+          <li>Open <b>System Settings</b> → <b>Privacy &amp; Security</b> → <b>Screen &amp; System Audio Recording</b>.</li>
+          <li>Turn on <b>Tether</b>. If macOS asks, click <b>Quit &amp; Reopen</b>.</li>
+        </ol>
+        <p class="tip">If the iPhone stays black after you share, this switch is usually off. Turn it on, then quit and reopen Tether.</p>
+      </li>
+
+      <li class="card card-quiet" aria-labelledby="s4">
+        <h2 id="s4" class="step-title"><span class="step-n">4</span>Optional: Accessibility. <span>Only for clicking and typing from the iPhone.</span></h2>
+        <p class="body-copy small">You only need this if you turn on <b>More options → Let the iPhone click and type too</b>. Using the Mac's own mouse and keyboard on the iPhone screen needs nothing extra.</p>
+        <ol class="guide-list">
+          <li>Open <b>System Settings</b> → <b>Privacy &amp; Security</b> → <b>Accessibility</b>.</li>
+          <li>Turn on <b>Tether</b> (click <b>+</b> and choose it from Applications if it isn't listed).</li>
+        </ol>
+      </li>
+    </ol>
+
+    <section class="card" aria-labelledby="help">
+      <h2 id="help" class="side-title">Something not working?</h2>
+      <dl class="faq">
+        <div>
+          <dt>No <b>Open Anyway</b> button in Privacy &amp; Security.</dt>
+          <dd>Double-click Tether once more so the warning appears again, then go straight back to System Settings. The button only shows up shortly after a blocked attempt.</dd>
+        </div>
+        <div>
+          <dt>macOS says Tether is “damaged”.</dt>
+          <dd>Delete it, download <b>Tether.dmg</b> again, and drag it to Applications again. If it still happens and you're comfortable with Terminal, this removes the download flag for Tether only:
+            <code class="cmd">xattr -dr com.apple.quarantine /Applications/Tether.app</code></dd>
+        </div>
+        <div>
+          <dt>The iPhone can't open the link or code.</dt>
+          <dd>Put the Mac and the iPhone on the same Wi-Fi, then scan the QR code shown in Tether.</dd>
+        </div>
+      </dl>
+    </section>
+
+    <p class="hint guide-foot">This guide is temporary. Once Tether is verified by Apple, it will open without any warning. <a href="/">Back to Tether</a></p>
+  </main>
+</body>
+</html>
