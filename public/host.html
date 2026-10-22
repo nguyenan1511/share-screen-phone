@@ -93,7 +93,7 @@
             <span class="hint">macOS 13 or later, Apple silicon and Intel. Not verified by Apple yet, so the first open takes one extra step: <a href="/install">how to open it</a>.</span>
             <div class="row">
               <a class="link-button" href="/install">Install guide</a>
-              <a class="pill pill-primary" href="https://github.com/nguyenan1511/share-screen-phone/releases/latest/download/Tether.dmg">Download for Mac</a>
+              <a class="pill pill-primary" href="https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/Tether.dmg">Download for Mac</a>
             </div>
           </div>
         </li>
@@ -218,6 +218,7 @@
           <dl class="facts">
             <div><dt>Connection</dt><dd id="pcState">–</dd></div>
             <div class="local-only"><dt>Cursor</dt><dd id="cursorWhere">On the laptop</dd></div>
+            <div class="desktop-only"><dt>App</dt><dd id="appVersion">–</dd></div>
           </dl>
           <p class="stats-line" id="streamStats">–</p>
         </section>
@@ -322,6 +323,27 @@
     // Inside the Mac app, Share picks the iPhone screen by itself (see desktop/main.js).
     const inDesktopApp = navigator.userAgent.includes('Electron');
     if (inDesktopApp) $('modeHint').textContent = 'Click Share screen. Once the iPhone screen is added, it is picked for you.';
+
+    // The Mac app updates itself, but never while this is true (desktop/updater.js asks every minute).
+    window.tetherBusy = () => Boolean(displayTrack || virtualDisplay);
+    if (window.tether) {
+      document.body.classList.add('desktop');
+      const UPDATE_TEXT = {
+        dev: () => 'Development build',
+        checking: () => 'Checking for updates…',
+        'up-to-date': () => 'Up to date',
+        downloading: (s) => `Downloading ${s.available}…`,
+        ready: (s) => (s.waiting ? `${s.available} installs when you stop sharing` : `${s.available} ready`),
+        installing: (s) => `Installing ${s.available}…`,
+        manual: (s) => `${s.available} available: ${s.reason}`,
+        error: () => 'Couldn\'t check for updates (will retry)',
+        idle: () => '',
+      };
+      window.tether.onUpdate((s) => {
+        const detail = (UPDATE_TEXT[s.state] ?? (() => ''))(s);
+        $('appVersion').textContent = `Tether ${s.current}${detail ? ` · ${detail}` : ''}`;
+      });
+    }
 
     async function init() {
       applyHosted();

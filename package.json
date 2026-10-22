@@ -1,6 +1,6 @@
 {
   "name": "share-screen-iphone",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "Tether: your iPhone as a second screen for your Mac.",
@@ -9,12 +9,14 @@
     "build:native": "mkdir -p native/.build && swiftc -O -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display",
     "build:helper-universal": "mkdir -p native/.build && swiftc -O -target arm64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-arm64 && swiftc -O -target x86_64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-x64 && lipo -create native/.build/phone-display-arm64 native/.build/phone-display-x64 -output native/.build/phone-display-universal",
     "app": "electron desktop/main.js",
-    "dist:mac": "npm run build:helper-universal && electron-builder --mac --universal"
+    "dist:mac": "npm run build:helper-universal && electron-builder --mac --universal",
+    "release:mac": "node scripts/release-mac.mjs"
   },
   "engines": {
     "node": ">=18"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1155.0",
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8"
   },
@@ -48,6 +50,12 @@
           "arch": [
             "universal"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
         }
       ],
       "category": "public.app-category.productivity",
@@ -56,13 +64,22 @@
       "gatekeeperAssess": false,
       "minimumSystemVersion": "13.0",
       "x64ArchFiles": "Contents/Resources/phone-display",
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.png",
+      "artifactName": "Tether-${version}-universal.${ext}"
     },
     "dmg": {
       "artifactName": "Tether.dmg",
       "title": "Tether"
     },
-    "afterPack": "scripts/after-pack.cjs"
+    "afterPack": "scripts/after-pack.cjs",
+    "publish": {
+      "provider": "generic",
+      "url": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac"
+    }
   },
-  "author": "nguyenan1511"
+  "author": "nguyenan1511",
+  "tether": {
+    "updateFeed": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/latest.json",
+    "downloadUrl": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/Tether.dmg"
+  }
 }

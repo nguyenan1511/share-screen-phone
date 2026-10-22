@@ -1,7 +1,13 @@
 // Tether for Mac (Electron): runs the same local server as `npm start`, with the prebuilt macOS
 // helper, and shows the laptop page in its own window. Phones still connect to this Mac over Wi-Fi.
-import { app, BrowserWindow, desktopCapturer, dialog, session, shell, systemPreferences } from 'electron';
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, session, shell, systemPreferences } from 'electron';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { startUpdater } from './updater.js';
+
+// Update feed and download link live in package.json ("tether"), so changing the bucket is one edit.
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -71,7 +77,7 @@ async function openWindow() {
     minHeight: 600,
     title: 'Tether',
     backgroundColor: '#f5f5f7',
-    webPreferences: { contextIsolation: true, sandbox: true },
+    webPreferences: { contextIsolation: true, sandbox: true, preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)) },
   });
   const home = `http://localhost:${port}/`;
   // The drop-zone box opens as a real window; everything else (room links, help) goes to the browser.
@@ -90,7 +96,25 @@ async function openWindow() {
   });
   win.on('closed', () => (win = null));
   await win.loadURL(home);
+  startUpdates();
 }
+
+// Automatic updates (desktop/updater.js). "Busy" = sharing or the iPhone screen is added: never update then.
+let updater = null;
+let lastStatus = null;
+function startUpdates() {
+  if (updater) return;
+  updater = startUpdater({
+    feedUrl: process.env.TETHER_UPDATE_FEED || pkg.tether.updateFeed,
+    downloadUrl: pkg.tether.downloadUrl,
+    isBusy: async () => Boolean(win && (await win.webContents.executeJavaScript('window.tetherBusy ? window.tetherBusy() : false'))),
+    onStatus: (status) => {
+      lastStatus = status;
+      win?.webContents.send('tether:update', status);
+    },
+  });
+}
+ipcMain.on('tether:update-request', (event) => lastStatus && event.sender.send('tether:update', lastStatus));
 
 app.on('second-instance', () => {
   if (win) {

@@ -40,3 +40,6 @@ native/.build/
 
 # desktop app build output
 dist/
+
+# release credentials (never commit)
+.env.release
