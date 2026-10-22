@@ -565,6 +565,7 @@ The structural breakpoints that matter for agents: 1440px (content lock), 1068px
 
 These win over the Apple analysis above for this app.
 
+- **Brand blue.** The one interactive color is the Tether logo blue **`#2f5bff`** (not Apple's `#0066cc`); on dark surfaces `#5b7fff`. White text on it is 5.2:1.
 - **Compact controls on the laptop page.** Every pill button (`.pill`: Add iPhone screen, Share screen, Copy…) and every option chip (`.seg`: Text size, Orientation, Where does the phone sit?, Video, Tuned for) is **32px tall, 14px text, 7px × 16px padding** (selected chip: 2px focus border, 6px × 15px padding). Do not go back to Apple's 44px pills here.
 - **iPhone viewer toolbar** buttons are 34px; the Touch/Trackpad switch is 30px.
 - **iPhone join screen** buttons stay 44px (finger targets).

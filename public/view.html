@@ -232,6 +232,7 @@
           rectCache = null;
           setStatus('');
           updateFsButton();
+          prepareMirror();
         },
         needKeyframe: () => sendRaw({ t: 'keyframe' }),
         onUnsupported() {
@@ -608,6 +609,7 @@
     video.onplaying = () => {
       setStatus('');
       updateFsButton();
+      prepareMirror();
     };
     document.body.onclick = (e) => {
       if (e.target === video && video.paused) video.play();
@@ -618,7 +620,10 @@
     // canvas, whose live stream plays in a tiny video that goes fullscreen. Where the whole page can go
     // fullscreen (iPad, desktop browsers), that is used instead. From the Home Screen it's already full.
     const fsVideo = $('fsVideo');
-    const mirror = { canvas: document.createElement('canvas'), ctx: null, active: false };
+    // stream:  the mirror's live stream. Kept between fullscreen sessions: iOS only allows fullscreen
+    //          during the tap itself, and a freshly made video isn't ready that fast, so it must already exist.
+    // drawing: true only while fullscreen is showing (costs nothing the rest of the time).
+    const mirror = { canvas: document.createElement('canvas'), ctx: null, stream: null, drawing: false, ticking: false };
     mirror.ctx = mirror.canvas.getContext('2d', { alpha: false });
     const isStandalone = () =>
       navigator.standalone === true || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
@@ -627,9 +632,29 @@
       $('fs').hidden = isStandalone() || !hasPicture() || Boolean(document.fullscreenElement);
     }
 
+    const mirrorLive = () => mirror.stream?.getVideoTracks()[0]?.readyState === 'live';
+
+    // Have the mirror video exist, hold a frame and be playing, so the next tap can go fullscreen at once.
+    // Called when the picture first appears and whenever Safari comes back to the front.
+    function prepareMirror() {
+      if (!fsVideo.webkitEnterFullscreen || !hasPicture()) return;
+      if (!mirrorLive()) {
+        // Size the canvas, start the stream, then paint: a canvas stream only carries frames drawn after it starts.
+        paintMirror();
+        mirror.stream = mirror.canvas.captureStream(60);
+        fsVideo.srcObject = mirror.stream;
+        paintMirror();
+        requestAnimationFrame(paintMirror);
+      }
+      if (fsVideo.paused) fsVideo.play().catch(() => {});
+    }
+
     const ARROW = new Path2D('M1 1 L1 18.5 L5.2 14.6 L8 21.4 L10.9 20.2 L8.1 13.6 L13.8 13.6 Z');
+    // Called on every picture frame and cursor move; only draws while fullscreen is showing.
     function drawMirror() {
-      if (!mirror.active) return;
+      if (mirror.drawing) paintMirror();
+    }
+    function paintMirror() {
       const [w, h] = mediaSize();
       if (!w) return;
       const { canvas: c, ctx } = mirror;
@@ -657,27 +682,19 @@
         ctx.restore();
       }
     }
-    // Standard (WebRTC) video: redraw the mirror on every new video frame.
+    // Standard (WebRTC) video: redraw the mirror on every new video frame while fullscreen is showing.
     function mirrorVideoTick() {
-      if (!mirror.active) return;
-      if (!turboActive) drawMirror();
-      video.requestVideoFrameCallback?.(mirrorVideoTick);
+      if (!mirror.drawing) return (mirror.ticking = false);
+      if (!turboActive) paintMirror();
+      video.requestVideoFrameCallback ? video.requestVideoFrameCallback(mirrorVideoTick) : (mirror.ticking = false);
     }
-
-    function startMirror() {
-      if (mirror.active) return;
-      mirror.active = true;
-      drawMirror();
-      fsVideo.srcObject = mirror.canvas.captureStream(60);
-      fsVideo.play().catch(() => {});
-      video.requestVideoFrameCallback?.(mirrorVideoTick);
-    }
-    function stopMirror() {
-      mirror.active = false;
-      fsVideo.srcObject?.getTracks().forEach((t) => t.stop());
-      fsVideo.srcObject = null;
-    }
-    fsVideo.addEventListener('webkitendfullscreen', stopMirror);
+    // Leaving fullscreen just stops drawing; the stream stays ready for next time.
+    fsVideo.addEventListener('webkitendfullscreen', () => (mirror.drawing = false));
+    // Keep the ready mirror fed with a recent frame (twice a second) while fullscreen is off, so it always
+    // has data when the user taps: a single frame doesn't reliably reach the video.
+    setInterval(() => {
+      if (!mirror.drawing && mirrorLive() && document.visibilityState === 'visible') paintMirror();
+    }, 500);
 
     $('fs').onclick = async () => {
       const root = document.documentElement;
@@ -688,15 +705,32 @@
         } catch {}
       }
       if (!fsVideo.webkitEnterFullscreen) return;
-      startMirror();
-      // iOS only allows fullscreen from the tap itself; if the mirror video isn't ready yet, a second tap is.
+      // Everything below runs inside the tap, which iOS requires for fullscreen.
+      prepareMirror();
+      mirror.drawing = true;
+      paintMirror();
+      fsVideo.play().catch(() => {});
+      if (!mirror.ticking && video.requestVideoFrameCallback) {
+        mirror.ticking = true;
+        video.requestVideoFrameCallback(mirrorVideoTick);
+      }
       if (fsVideo.readyState >= 1) {
         try { return fsVideo.webkitEnterFullscreen(); } catch {}
       }
-      fsVideo.addEventListener('loadedmetadata', () => {
-        try { fsVideo.webkitEnterFullscreen(); } catch { setStatus('Tap the full-screen button again'); setTimeout(() => setStatus(''), 2500); }
-      }, { once: true });
+      // The stream had to be rebuilt just now (e.g. iOS shut it down); it's ready in a moment.
+      mirror.drawing = false;
+      setStatus('Tap the full-screen button again');
+      setTimeout(() => setStatus(''), 2500);
     };
+
+    // Back in Safari after switching apps: iOS paused the videos (and may have ended the mirror's stream).
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      if (video.srcObject && video.paused) video.play().catch(() => {});
+      if (!fsVideo.webkitDisplayingFullscreen) mirror.drawing = false;
+      prepareMirror();
+    });
+    addEventListener('pageshow', () => prepareMirror());
     document.addEventListener('fullscreenchange', updateFsButton);
     // Four digit boxes: typing moves forward, backspace moves back, pasting fills them all.
     const digitInputs = [...$('digits').querySelectorAll('input')];
