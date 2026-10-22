@@ -9,7 +9,8 @@ if (!app.requestSingleInstanceLock()) app.quit();
 if (app.isPackaged) process.env.PHONE_SCREEN_HELPER ||= path.join(process.resourcesPath, 'phone-display');
 process.env.PORT ||= '3001';
 
-const { serverReady } = await import('../server.js');
+await import('../server.js');
+const serverReady = globalThis.tetherServerReady;
 
 let win = null;
 

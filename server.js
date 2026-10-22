@@ -603,8 +603,9 @@ server.on('error', (err) => {
 });
 
 // Resolves with the port once listening (the desktop app waits for it before opening its window).
+// A global, not an export: Vercel treats a server file with exports as a function module and fails.
 let markReady;
-export const serverReady = new Promise((resolve) => (markReady = resolve));
+globalThis.tetherServerReady = new Promise((resolve) => (markReady = resolve));
 
 server.listen(PORT, '0.0.0.0', () => {
   markReady(PORT);
