@@ -1,6 +1,7 @@
 // Tether for Mac (Electron): runs the same local server as `npm start`, with the prebuilt macOS
 // helper, and shows the laptop page in its own window. Phones still connect to this Mac over Wi-Fi.
 import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, session, shell, systemPreferences } from 'electron';
+import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,20 +26,43 @@ const SCREEN_RECORDING_SETTINGS = 'x-apple.systempreferences:com.apple.preferenc
 // Without Screen Recording permission macOS gives the app no screens at all. Say so (with a way to fix it)
 // instead of failing silently. Ad-hoc signed builds count as a new app after every update, so this can
 // also happen when Tether still looks switched on in System Settings.
+//
+// "Fix it" clears only Tether's own Screen Recording entry (`tccutil reset ScreenCapture <bundle id>`, no admin
+// needed) — the stale grant macOS keeps for an earlier build — then asks for capture so macOS shows its fresh
+// "allow screen recording" prompt, and opens the right Settings page. Same as removing and re-adding it by hand.
 async function explainScreenPermission() {
   const { response } = await dialog.showMessageBox(win, {
     type: 'warning',
     message: 'Tether needs Screen Recording permission',
     detail:
-      'Open System Settings → Privacy & Security → Screen & System Audio Recording and turn on Tether, ' +
-      'then quit and reopen Tether.\n\nAlready on? After an update macOS may not count it: select Tether, ' +
-      'remove it with −, add it again with +, then reopen Tether.',
-    buttons: ['Open System Settings', 'Cancel'],
+      'Click Fix it, then turn on Tether in Screen & System Audio Recording and choose Quit & Reopen.\n\n' +
+      'This happens after updates until Tether is verified by Apple: macOS keeps the permission for the old ' +
+      'version, so it looks on but doesn\'t work.',
+    buttons: ['Fix it', 'Cancel'],
     defaultId: 0,
     cancelId: 1,
   });
-  if (response === 0) shell.openExternal(SCREEN_RECORDING_SETTINGS);
+  if (response !== 0) return;
+  await resetScreenPermission();
+  await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => {});
+  shell.openExternal(SCREEN_RECORDING_SETTINGS);
 }
+
+function resetScreenPermission() {
+  if (!app.isPackaged) return Promise.resolve(); // dev runs borrow Terminal's permission; nothing to reset
+  const plist = path.join(path.dirname(process.execPath), '..', 'Info.plist');
+  return new Promise((resolve) => {
+    execFile('/usr/bin/plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', plist], (err, id) => {
+      if (err || !id.trim()) return resolve();
+      execFile('/usr/bin/tccutil', ['reset', 'ScreenCapture', id.trim()], () => resolve());
+    });
+  });
+}
+
+// The page reports a failed share (AbortError etc.): in the app that almost always means this permission,
+// unless the user just cancelled our own screen picker.
+let userCancelledAt = 0;
+ipcMain.handle('tether:share-failed', () => (Date.now() - userCancelledAt < 5000 ? null : explainScreenPermission()));
 
 // Share screen: when the iPhone screen exists, share it right away (no picker). Otherwise ask which screen.
 function handleScreenRequests(port) {
@@ -46,6 +70,7 @@ function handleScreenRequests(port) {
     try {
       const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
       if (!sources.length || systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+        userCancelledAt = Date.now(); // the dialog below is the explanation; don't show a second one
         callback({});
         return explainScreenPermission();
       }
@@ -60,6 +85,7 @@ function handleScreenRequests(port) {
         buttons: [...names, 'Cancel'],
         cancelId: names.length,
       });
+      if (response >= sources.length) userCancelledAt = Date.now();
       callback(response < sources.length ? { video: sources[response] } : {});
     } catch {
       callback({});

@@ -550,6 +550,8 @@
         $('modeHint').innerHTML = inDesktopApp
           ? 'Sharing didn\'t start. If you didn\'t cancel it, Tether needs <b>Screen Recording</b> permission: <a href="/install#s3" target="_blank">how to allow it</a>.'
           : 'Sharing was cancelled. Click Share screen to try again.';
+        // In the app, AbortError with no picker shown means macOS refused capture: offer the one-click fix.
+        if (inDesktopApp && err.name === 'AbortError') window.tether?.shareFailed?.();
         return;
       }
       displayTrack = displayStream.getVideoTracks()[0];
