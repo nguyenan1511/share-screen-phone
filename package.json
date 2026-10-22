@@ -3,12 +3,66 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Share your laptop screen (Chrome) to an iPhone browser over WebRTC.",
+  "description": "Tether: your iPhone as a second screen for your Mac.",
   "scripts": {
     "start": "node server.js",
-    "build:native": "mkdir -p native/.build && swiftc -O -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display"
+    "build:native": "mkdir -p native/.build && swiftc -O -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display",
+    "build:helper-universal": "mkdir -p native/.build && swiftc -O -target arm64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-arm64 && swiftc -O -target x86_64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-x64 && lipo -create native/.build/phone-display-arm64 native/.build/phone-display-x64 -output native/.build/phone-display-universal",
+    "app": "electron desktop/main.js",
+    "dist:mac": "npm run build:helper-universal && electron-builder --mac --universal"
   },
   "engines": {
     "node": ">=18"
-  }
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.nguyenan.tether",
+    "productName": "Tether",
+    "extraMetadata": {
+      "main": "desktop/main.js"
+    },
+    "files": [
+      "desktop/**/*",
+      "server.js",
+      "signal-redis.js",
+      "public/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "native/.build/phone-display-universal",
+        "to": "phone-display"
+      }
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "minimumSystemVersion": "13.0",
+      "x64ArchFiles": "Contents/Resources/phone-display",
+      "icon": "assets/icon.png"
+    },
+    "dmg": {
+      "artifactName": "Tether.dmg",
+      "title": "Tether"
+    },
+    "afterPack": "scripts/after-pack.cjs"
+  },
+  "author": "nguyenan1511"
 }

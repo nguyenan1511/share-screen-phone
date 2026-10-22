@@ -1,4 +1,4 @@
-/* Phone Screen. Follows DESIGN.md (Apple design analysis): Parchment canvas, white utility cards,
+/* Tether. Follows DESIGN.md (Apple design analysis): Parchment canvas, white utility cards,
    near-black ink, one Action Blue for everything interactive, SF Pro via the system font, pills for actions,
    no shadows on chrome, press = scale(0.95). */
 :root {
@@ -58,6 +58,8 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 }
 .pill:active:not(:disabled) { transform: scale(0.95); }
 .pill-primary { background: var(--primary); color: #fff; }
+a.pill { display: inline-flex; align-items: center; text-decoration: none; }
+a.pill-primary:hover { text-decoration: none; color: #fff; }
 .pill-ghost { background: transparent; color: var(--primary); border-color: var(--primary); }
 .pill-sm { min-height: 32px; padding: 7px 15px; font-size: 14px; letter-spacing: -0.224px; }
 .link-button { border: 0; background: none; padding: 0; color: var(--primary); font-size: 14px; }
@@ -552,3 +554,8 @@ kbd.recording { border: 2px solid var(--focus); padding: 0 12px; font-size: 14px
 .join-foot { margin-top: auto; padding-top: 32px; display: flex; flex-direction: column; gap: 10px; }
 .join-foot p { margin: 0; font-size: 14px; letter-spacing: -0.224px; color: var(--muted); text-wrap: pretty; }
 .join-foot span { font-size: 12px; letter-spacing: -0.12px; color: var(--muted); }
+
+/* Tether mark next to the name (sub-nav, join screen) */
+.brand-mark { height: 0.9em; width: auto; margin-right: 0.4em; vertical-align: -0.08em; }
+.sub-nav-title { display: inline-flex; align-items: center; }
+.join .brand-name { display: inline-flex; align-items: center; }

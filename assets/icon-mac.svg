@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- macOS icon grid: 824×824 body centered on a 1024 canvas -->
+  <g transform="translate(100 100) scale(2.1458)">
+    <rect width="384" height="384" rx="86" fill="#2f5bff"/>
+    <path d="M204 231H94a10 10 0 0 1-10-10V122a10 10 0 0 1 10-10h147a10 10 0 0 1 10 10v30" fill="none" stroke="#fff" stroke-width="16"/>
+    <rect x="220" y="168" width="76" height="124" rx="4" fill="#111318"/>
+  </g>
+</svg>

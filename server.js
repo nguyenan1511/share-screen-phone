@@ -28,12 +28,15 @@ const MIME = {
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.png': 'image/png',
   '.webmanifest': 'application/manifest+json',
 };
 const NATIVE_DIR = fileURLToPath(new URL('./native/', import.meta.url));
 const HELPER_SRC = join(NATIVE_DIR, 'phone-display.swift');
 const HELPER_HEADER = join(NATIVE_DIR, 'CGVirtualDisplay.h');
-const HELPER_BIN = join(NATIVE_DIR, '.build', 'phone-display');
+// The desktop app ships a prebuilt helper (users have no Swift compiler); otherwise compile on first use.
+const PREBUILT_HELPER = process.env.PHONE_SCREEN_HELPER || '';
+const HELPER_BIN = PREBUILT_HELPER || join(NATIVE_DIR, '.build', 'phone-display');
 const OTHER = { host: 'viewer', viewer: 'host' };
 const POLL_HOLD_MS = 25_000;
 const PEER_TIMEOUT_MS = 40_000;
@@ -330,6 +333,7 @@ function helperSend(cmd) {
 }
 
 async function buildHelper() {
+  if (PREBUILT_HELPER) return;
   const [src, header, bin] = await Promise.all([stat(HELPER_SRC), stat(HELPER_HEADER), stat(HELPER_BIN).catch(() => null)]);
   if (bin && bin.mtimeMs > Math.max(src.mtimeMs, header.mtimeMs)) return;
   await mkdir(join(NATIVE_DIR, '.build'), { recursive: true });
@@ -598,7 +602,12 @@ server.on('error', (err) => {
   }
 });
 
+// Resolves with the port once listening (the desktop app waits for it before opening its window).
+let markReady;
+export const serverReady = new Promise((resolve) => (markReady = resolve));
+
 server.listen(PORT, '0.0.0.0', () => {
+  markReady(PORT);
   console.log(`Laptop (Chrome): http://localhost:${PORT}`);
   for (const ip of lanIps()) console.log(`Same Wi-Fi:      http://${ip}:${PORT}`);
   console.log(`Public:          ngrok http ${PORT}`);

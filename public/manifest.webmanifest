@@ -1,11 +1,24 @@
 {
-  "name": "Phone Screen",
-  "short_name": "Phone Screen",
+  "name": "Tether",
+  "short_name": "Tether",
   "description": "Your Mac's second screen, on this iPhone.",
   "start_url": "/view?latest",
   "scope": "/",
   "display": "fullscreen",
   "orientation": "any",
   "background_color": "#000000",
-  "theme_color": "#000000"
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
 }

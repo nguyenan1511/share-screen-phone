@@ -37,3 +37,6 @@ next-env.d.ts
 
 # compiled macOS helper (built on first use)
 native/.build/
+
+# desktop app build output
+dist/

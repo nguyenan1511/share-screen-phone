@@ -3,21 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Screen to iPhone</title>
+  <title>Tether</title>
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 </head>
 <body class="host">
   <nav class="global-nav" aria-label="App">
     <div class="global-nav-inner">
-      <span class="app-name">Phone Screen</span>
+      <span class="app-name">Tether</span>
       <span class="nav-meta"><span class="mono" id="serverAddr"></span></span>
     </div>
   </nav>
 
   <div class="sub-nav">
     <div class="sub-nav-inner">
-      <span class="sub-nav-title">Phone Screen</span>
+      <span class="sub-nav-title"><img class="brand-mark" src="/icons/mark.svg" alt="">Tether</span>
       <div class="sub-nav-right">
         <span class="status"><span class="dot" id="viewerDot"></span>iPhone <span id="viewerState">waiting</span></span>
         <span class="status"><span class="dot" id="liveDot"></span><span id="liveState">idle</span></span>
@@ -83,9 +86,13 @@
 
         <li class="card hosted-only" aria-labelledby="macAppTitle">
           <div class="card-head">
-            <h2 id="macAppTitle">Screen. <span>Pick what to show in the next step.</span></h2>
+            <h2 id="macAppTitle">Want a real second screen? <span>Get the Mac app.</span></h2>
           </div>
-          <p class="body-copy">From this website you can show any screen, window or Chrome tab on the iPhone. A separate iPhone screen (a second monitor only the phone shows, with an instant cursor and shortcuts) needs the Phone Screen app for Mac, which is coming later.</p>
+          <p class="body-copy">From this website you can show any screen, window or Chrome tab on the iPhone. The Tether app for Mac adds a separate iPhone screen: a second monitor only the phone shows, sized for your iPhone, with an instant cursor and shortcuts.</p>
+          <div class="card-foot">
+            <span class="hint">macOS 13 or later, Apple silicon and Intel. First open: System Settings → Privacy &amp; Security → Open Anyway.</span>
+            <a class="pill pill-primary" href="https://github.com/nguyenan1511/share-screen-phone/releases/latest/download/Tether.dmg">Download for Mac</a>
+          </div>
         </li>
 
         <li class="card local-only" id="vdCard" aria-labelledby="sizeTitle">
@@ -308,6 +315,10 @@
       $('modeHint').textContent = 'Chrome will ask what to share. Pick a screen, a window (for example your code editor) or a tab.';
       document.querySelector('.hero p').textContent = 'Show any screen, window or tab of this computer on your iPhone.';
     }
+
+    // Inside the Mac app, Share picks the iPhone screen by itself (see desktop/main.js).
+    const inDesktopApp = navigator.userAgent.includes('Electron');
+    if (inDesktopApp) $('modeHint').textContent = 'Click Share screen. Once the iPhone screen is added, it is picked for you.';
 
     async function init() {
       applyHosted();
