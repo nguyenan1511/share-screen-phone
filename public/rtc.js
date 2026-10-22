@@ -19,6 +19,9 @@ export const getInfo = () => (infoPromise ??= api('/api/info'));
 export function openSignaling(room, role, { onMessage, onStatus = () => {}, key = '' }) {
   let id = null;
   let closed = false;
+  // Polling pace when the server can't hold requests open (public site, Redis): quick while connecting,
+  // slow once the video flows peer-to-peer and signaling only has to notice someone leaving.
+  let paceMs = 500;
   const enc = encodeURIComponent;
   const qs = () => `room=${enc(room)}&role=${enc(role)}&id=${enc(id ?? '')}`;
 
@@ -30,8 +33,9 @@ export function openSignaling(room, role, { onMessage, onStatus = () => {}, key 
           id = joined.id;
           onStatus(joined.pending ? 'waiting-approval' : 'online');
         }
-        const { messages } = await api(`/api/poll?${qs()}`);
+        const { messages, poll } = await api(`/api/poll?${qs()}`);
         for (const msg of messages) await onMessage(msg);
+        if (poll && !messages.length) await new Promise((r) => setTimeout(r, paceMs));
       } catch (err) {
         if (closed) return;
         if (err.status === 404 || err.status === 403) return onStatus('room-not-found');
@@ -55,6 +59,11 @@ export function openSignaling(room, role, { onMessage, onStatus = () => {}, key 
   return {
     send: (data) =>
       id && api(`/api/signal?${qs()}`, { method: 'POST', body: JSON.stringify(data) }).catch(() => {}),
+    // How long to wait between polls on the public site: 'fast' while connecting, or a number of ms
+    // once connected (the laptop checks more often than the phone: it has to see new Allow requests).
+    setPace: (pace) => {
+      paceMs = pace === 'fast' ? 500 : pace;
+    },
     // Laptop only: allow or deny a phone that joined with just the code.
     approve: (viewerId, allow) =>
       api(`/api/approve?${qs()}&viewer=${enc(viewerId)}&allow=${allow ? 1 : 0}`, { method: 'POST' }),

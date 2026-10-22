@@ -66,10 +66,10 @@
                   <button type="button" class="pill pill-ghost pill-sm" id="copyLink">Copy link</button>
                 </div>
               </div>
-              <p class="hint">Bookmark <a id="latestLink" target="_blank"></a> on the phone to always join the newest session.</p>
+              <p class="hint local-only">Bookmark <a id="latestLink" target="_blank"></a> on the phone to always join the newest session.</p>
             </div>
           </div>
-          <details class="disclosure">
+          <details class="disclosure local-only">
             <summary>Not on the same Wi-Fi, or the phone can't open it?</summary>
             <div class="disclosure-body">
               <label class="label" for="base">Address the phone uses</label>
@@ -81,7 +81,14 @@
           </details>
         </li>
 
-        <li class="card" id="vdCard" aria-labelledby="sizeTitle">
+        <li class="card hosted-only" aria-labelledby="macAppTitle">
+          <div class="card-head">
+            <h2 id="macAppTitle">Screen. <span>Pick what to show in the next step.</span></h2>
+          </div>
+          <p class="body-copy">From this website you can show any screen, window or Chrome tab on the iPhone. A separate iPhone screen (a second monitor only the phone shows, with an instant cursor and shortcuts) needs the Phone Screen app for Mac, which is coming later.</p>
+        </li>
+
+        <li class="card local-only" id="vdCard" aria-labelledby="sizeTitle">
           <div class="card-head">
             <h2 id="sizeTitle">Screen. <span>Like plugging in a monitor only the phone shows.</span></h2>
             <span class="status"><span class="dot" id="vdDot"></span><span id="vdShort">Off</span></span>
@@ -200,12 +207,12 @@
           <h2 id="nowTitle" class="side-title">Right now.</h2>
           <dl class="facts">
             <div><dt>Connection</dt><dd id="pcState">–</dd></div>
-            <div><dt>Cursor</dt><dd id="cursorWhere">On the laptop</dd></div>
+            <div class="local-only"><dt>Cursor</dt><dd id="cursorWhere">On the laptop</dd></div>
           </dl>
           <p class="stats-line" id="streamStats">–</p>
         </section>
 
-        <section class="card" aria-labelledby="hotkeyTitle">
+        <section class="card local-only" aria-labelledby="hotkeyTitle">
           <h2 id="hotkeyTitle" class="side-title">Shortcuts.</h2>
           <div class="shortcut-row" data-hotkey="jump">
             <div>
@@ -293,7 +300,17 @@
       $('qr').innerHTML = qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true });
     }
 
+    // Public site (Vercel): hide what needs the Mac app, and describe sharing for a browser-only setup.
+    async function applyHosted() {
+      const { hosted } = await getInfo();
+      document.body.classList.toggle('hosted', Boolean(hosted));
+      if (!hosted) return;
+      $('modeHint').textContent = 'Chrome will ask what to share. Pick a screen, a window (for example your code editor) or a tab.';
+      document.querySelector('.hero p').textContent = 'Show any screen, window or tab of this computer on your iPhone.';
+    }
+
     async function init() {
+      applyHosted();
       ({ code: room, key: roomKey } = await api('/api/rooms', { method: 'POST' }));
       $('code').textContent = room;
       await setupBase();
@@ -371,7 +388,10 @@
       const { pc } = peer;
       if (!outTrack()) return closePeer();
       $('pcState').textContent = 'offering…';
-      pc.onconnectionstatechange = () => ($('pcState').textContent = pc.connectionState);
+      pc.onconnectionstatechange = () => {
+        $('pcState').textContent = pc.connectionState;
+        signaling.setPace(pc.connectionState === 'connected' ? 4000 : 'fast');
+      };
       channel = pc.createDataChannel('input');
       channel.onopen = () => {
         sendControlState();

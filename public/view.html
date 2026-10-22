@@ -84,7 +84,7 @@
   <textarea id="kb" class="kb" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Keyboard input"></textarea>
 
   <script type="module">
-    import { api, openSignaling, createPeer, lowLatencyReceiver, watchStats } from './rtc.js';
+    import { api, getInfo, openSignaling, createPeer, lowLatencyReceiver, watchStats } from './rtc.js';
     import { createTurboReceiver, turboReceiveSupported } from './turbo.js';
 
     const $ = (id) => document.getElementById(id);
@@ -114,7 +114,7 @@
       setStatus(`Waiting for laptop (room ${room})…`);
       const enc = encodeURIComponent;
       history.replaceState(null, '', `?room=${enc(room)}${key ? `&key=${enc(key)}` : ''}${params.has('stats') ? '&stats' : ''}`);
-      openDirectCursor();
+      getInfo().then(({ hosted }) => !hosted && openDirectCursor());
       signaling = openSignaling(room, 'viewer', {
         key,
         onMessage,
@@ -199,6 +199,7 @@
       };
       pc.onconnectionstatechange = () => {
         const state = pc.connectionState;
+        signaling.setPace(state === 'connected' ? 10_000 : 'fast');
         if (state === 'connected') setStatus(hasPicture() ? '' : 'Connected, waiting for video…');
         else if (state === 'failed') setStatus('Video could not connect. Phone and laptop cannot reach each other: try the same Wi-Fi, or set up a TURN relay.');
         else setStatus(`Video: ${state}…`);
@@ -724,6 +725,7 @@
       }
     };
     $('joinHost').textContent = location.host;
+    getInfo().then(({ hosted }) => ($('latest').hidden = Boolean(hosted))).catch(() => {});
     $('latest').onclick = joinLatest;
 
     if (params.has('room')) {

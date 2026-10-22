@@ -9,6 +9,14 @@ import { createInterface } from 'node:readline';
 import { networkInterfaces } from 'node:os';
 import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { handleRedisSignaling, redisConfigured } from './signal-redis.js';
+
+// Running as the public site (Vercel): no macOS helper, and rooms must live in Redis because Vercel may
+// run several short-lived copies of this server. On a Mac (npm start) rooms stay in memory.
+const HOSTED = Boolean(process.env.VERCEL);
+if (HOSTED && !redisConfigured) {
+  console.warn('Hosted without Redis: rooms live in memory and will randomly disappear. Add Upstash Redis (KV_REST_API_URL / KV_REST_API_TOKEN).');
+}
 
 // If the port is taken by another app, the next free port is used and printed.
 const PREFERRED_PORT = Number(process.env.PORT) || 3001;
@@ -487,6 +495,7 @@ const server = http.createServer(async (req, res) => {
   const id = url.searchParams.get('id');
 
   try {
+    if (redisConfigured && url.pathname.startsWith('/api/') && (await handleRedisSignaling(req, res, url, readBody))) return;
     if (req.method === 'POST' && url.pathname === '/api/rooms') {
       const code = newCode();
       if (!code) return json(res, 503, { error: 'no free room codes, try again in a few minutes' });
@@ -499,7 +508,13 @@ const server = http.createServer(async (req, res) => {
       return latestRoom ? json(res, 200, { code: latestRoom }) : json(res, 404, { error: 'no active room' });
     }
     if (req.method === 'GET' && url.pathname === '/api/info') {
-      return json(res, 200, { port: PORT, lanIps: lanIps(), iceServers: ICE_SERVERS });
+      return json(res, 200, {
+        port: PORT,
+        lanIps: HOSTED ? [] : lanIps(),
+        iceServers: ICE_SERVERS,
+        hosted: HOSTED, // the public site: no iPhone screen (needs the Mac app), no "join latest"
+        signaling: redisConfigured ? 'redis' : 'memory',
+      });
     }
     if (req.method === 'POST' && url.pathname === '/api/join') {
       return joinRoom(req, res, room, role, url.searchParams.get('key'));
