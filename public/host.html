@@ -1,0 +1,1255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Screen to iPhone</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+</head>
+<body class="host">
+  <nav class="global-nav" aria-label="App">
+    <div class="global-nav-inner">
+      <span class="app-name">Phone Screen</span>
+      <span class="nav-meta"><span class="mono" id="serverAddr"></span></span>
+    </div>
+  </nav>
+
+  <div class="sub-nav">
+    <div class="sub-nav-inner">
+      <span class="sub-nav-title">Phone Screen</span>
+      <div class="sub-nav-right">
+        <span class="status"><span class="dot" id="viewerDot"></span>iPhone <span id="viewerState">waiting</span></span>
+        <span class="status"><span class="dot" id="liveDot"></span><span id="liveState">idle</span></span>
+        <button type="button" class="pill pill-primary pill-sm" id="shareTop">Share screen</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="approve-bar" id="approveBar" role="alertdialog" aria-labelledby="approveText" hidden>
+    <div class="approve-inner">
+      <p id="approveText"><b>An iPhone wants to see your screen.</b> It joined with the room code. Allow it only if it's yours.</p>
+      <div class="row">
+        <button type="button" class="pill pill-ghost pill-sm" id="approveDeny">Deny</button>
+        <button type="button" class="pill pill-primary pill-sm" id="approveAllow">Allow</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="page">
+    <header class="hero">
+      <h1>Your iPhone.<br>Now a second screen.</h1>
+      <p>Work with this Mac's mouse and keyboard. Look at the phone.</p>
+    </header>
+
+    <div class="grid">
+      <ol class="sections">
+        <li class="card" aria-labelledby="connectTitle">
+          <div class="card-head">
+            <h2 id="connectTitle">Connect. <span>Point your iPhone's camera at the code.</span></h2>
+            <span class="status"><span class="dot" id="connectDot"></span><span id="connectState">Waiting for the phone</span></span>
+          </div>
+          <div class="connect">
+            <div id="qr" class="qr" role="img" aria-label="QR code with the link for the iPhone"></div>
+            <div class="connect-info">
+              <div>
+                <span class="label">Room code</span>
+                <div class="row">
+                  <span id="code" class="code">····</span>
+                  <button type="button" class="pill pill-ghost pill-sm" id="copyCode">Copy</button>
+                </div>
+              </div>
+              <div>
+                <span class="label">Or open this link on the phone</span>
+                <div class="inline">
+                  <a id="roomLink" class="field mono link-field" target="_blank"></a>
+                  <button type="button" class="pill pill-ghost pill-sm" id="copyLink">Copy link</button>
+                </div>
+              </div>
+              <p class="hint">Bookmark <a id="latestLink" target="_blank"></a> on the phone to always join the newest session.</p>
+            </div>
+          </div>
+          <details class="disclosure">
+            <summary>Not on the same Wi-Fi, or the phone can't open it?</summary>
+            <div class="disclosure-body">
+              <label class="label" for="base">Address the phone uses</label>
+              <input id="base" class="field mono" list="bases" spellcheck="false" placeholder="https://your-name.ngrok-free.dev">
+              <datalist id="bases"></datalist>
+              <p class="hint">Run <code>ngrok http <span class="port">3001</span></code> and paste its https address here. The code updates.</p>
+              <p id="baseWarn" class="warn" hidden>A plain <code>http://</code> address can block video on the iPhone. If it does, use the ngrok address.</p>
+            </div>
+          </details>
+        </li>
+
+        <li class="card" id="vdCard" aria-labelledby="sizeTitle">
+          <div class="card-head">
+            <h2 id="sizeTitle">Screen. <span>Like plugging in a monitor only the phone shows.</span></h2>
+            <span class="status"><span class="dot" id="vdDot"></span><span id="vdShort">Off</span></span>
+          </div>
+
+          <div class="split">
+            <div class="options">
+              <div class="option">
+                <span class="option-label" id="phoneModelLabel">Which iPhone?</span>
+                <select id="phoneModel" data-ui="menu" aria-labelledby="phoneModelLabel" hidden>
+                  <option value="auto" selected>Detect automatically</option>
+                  <optgroup label="iPhone models" id="phoneList"></optgroup>
+                  <option value="custom">Custom size…</option>
+                </select>
+                <p class="hint" id="detected"></p>
+                <span id="customSize" class="custom" hidden>
+                  <input id="customW" class="field" type="number" min="300" max="2560" step="2" value="500" aria-label="Width in points">
+                  <span aria-hidden="true">×</span>
+                  <input id="customH" class="field" type="number" min="300" max="2560" step="2" value="700" aria-label="Height in points">
+                  <span class="hint">points</span>
+                </span>
+              </div>
+              <fieldset class="option">
+                <legend class="option-label">Text size. <span>Small fits the most, Large matches the iPhone.</span></legend>
+                <select id="textSize" data-ui="seg" aria-label="Text size on the phone" hidden>
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large" selected>Large</option>
+                </select>
+              </fieldset>
+              <fieldset class="option">
+                <legend class="option-label">Orientation.</legend>
+                <select id="orientation" data-ui="seg" aria-label="Orientation" hidden>
+                  <option value="auto" selected>Auto</option>
+                  <option value="portrait">Portrait</option>
+                  <option value="landscape">Landscape</option>
+                </select>
+              </fieldset>
+            </div>
+
+            <fieldset class="option">
+              <legend class="option-label">Where does the phone sit?</legend>
+              <div class="placement" id="placement" aria-hidden="true">
+                <div class="laptop" id="mapLaptop"><span>This Mac</span></div>
+                <div class="phone" id="mapPhone"><span id="mapPhoneLabel"></span></div>
+                <span class="edge" id="mapEdge"></span>
+              </div>
+              <p class="caption" id="placementCaption"></p>
+              <select id="vdPos" data-ui="seg" aria-label="Where the phone sits" hidden>
+                <option value="left">Left</option>
+                <option value="right" selected>Right</option>
+                <option value="above">Above</option>
+              </select>
+            </fieldset>
+          </div>
+
+          <div class="card-foot">
+            <span class="hint" id="sizePreview"></span>
+            <span class="hint" id="vdState">Not added yet.</span>
+            <div class="row">
+              <button type="button" class="pill pill-ghost" id="vdStop" hidden>Remove screen</button>
+              <button type="button" class="pill pill-primary" id="vdStart">Add iPhone screen</button>
+            </div>
+          </div>
+        </li>
+
+        <li class="card" aria-labelledby="shareTitle">
+          <div class="card-head">
+            <h2 id="shareTitle">Share. <span>Send the iPhone screen to the phone.</span></h2>
+            <span class="status"><span class="dot" id="shareDot"></span><span id="shareState">not sharing</span></span>
+          </div>
+          <p class="body-copy" id="modeHint">Chrome will ask what to share. Pick Entire screen, then the one called iPhone Screen.</p>
+          <div class="split">
+            <fieldset class="option">
+              <legend class="option-label">Video.</legend>
+              <select id="engine" data-ui="seg" aria-label="Video engine" hidden>
+                <option value="turbo" selected>Turbo</option>
+                <option value="standard">Standard</option>
+              </select>
+            </fieldset>
+            <fieldset class="option">
+              <legend class="option-label">Tuned for.</legend>
+              <select id="quality" data-ui="seg" aria-label="Video tuning" hidden>
+                <option value="smooth" selected>Smooth motion</option>
+                <option value="sharp">Sharp text</option>
+              </select>
+            </fieldset>
+          </div>
+          <div class="card-foot">
+            <span></span>
+            <div class="row">
+              <button type="button" id="stop" class="pill pill-ghost" hidden>Stop sharing</button>
+              <button type="button" id="share" class="pill pill-primary">Share screen</button>
+            </div>
+          </div>
+        </li>
+
+        <li class="card card-quiet">
+          <details class="disclosure">
+            <summary>More options</summary>
+            <div class="disclosure-body">
+              <label class="check"><input type="checkbox" id="allowControl"><span>Let the iPhone click and type too (touch, trackpad, keyboard)</span></label>
+              <p class="hint" id="controlState"></p>
+              <fieldset id="modes">
+                <legend class="option-label">What the phone shows.</legend>
+                <label class="check"><input type="radio" name="mode" value="full" checked><span>Everything I share</span></label>
+                <label class="check"><input type="radio" name="mode" value="zone"><span>Drop zone: only what I drag over a box on the laptop</span></label>
+              </fieldset>
+            </div>
+          </details>
+        </li>
+      </ol>
+
+      <aside class="side">
+        <section class="card" aria-live="polite" aria-labelledby="nowTitle">
+          <h2 id="nowTitle" class="side-title">Right now.</h2>
+          <dl class="facts">
+            <div><dt>Connection</dt><dd id="pcState">–</dd></div>
+            <div><dt>Cursor</dt><dd id="cursorWhere">On the laptop</dd></div>
+          </dl>
+          <p class="stats-line" id="streamStats">–</p>
+        </section>
+
+        <section class="card" aria-labelledby="hotkeyTitle">
+          <h2 id="hotkeyTitle" class="side-title">Shortcuts.</h2>
+          <div class="shortcut-row" data-hotkey="jump">
+            <div>
+              <span class="shortcut-name">Jump between Mac and iPhone</span>
+              <span class="hint">Or move the cursor off the <span id="edgeName">right</span> edge.</span>
+            </div>
+            <div class="row">
+              <div class="keys" tabindex="-1"></div>
+              <button type="button" class="pill pill-ghost pill-sm" data-act="change">Change</button>
+              <button type="button" class="link-button" data-act="reset" hidden>Reset</button>
+            </div>
+          </div>
+          <div class="shortcut-row" data-hotkey="center">
+            <div>
+              <span class="shortcut-name">Center on the iPhone</span>
+              <span class="hint">Puts the cursor in the middle of the iPhone screen.</span>
+            </div>
+            <div class="row">
+              <div class="keys" tabindex="-1"></div>
+              <button type="button" class="pill pill-ghost pill-sm" data-act="change">Change</button>
+              <button type="button" class="link-button" data-act="reset" hidden>Reset</button>
+            </div>
+          </div>
+          <p class="hint" id="hotkeyNote" aria-live="polite"></p>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <video id="preview" muted playsinline hidden></video>
+
+  <script type="module">
+    import { api, getInfo, openSignaling, createPeer, preferH264, boostStartBitrate, watchStats } from './rtc.js';
+    import { startTurboSender, turboSupported } from './turbo.js';
+    import { PHONES, detectPhone, screenFor } from './phones.js';
+
+    const $ = (id) => document.getElementById(id);
+    let room, roomKey, signaling, peer, sender;
+    let displayStream = null, displayTrack = null, zoneTrack = null;
+    let zoneWin = null, viewerPresent = false, callId = 0;
+    let channel = null, virtualDisplay = null, viewport = null, stopStats = null;
+    let cursorChannel = null, cursorAbort = null;
+    const drawn = []; // sync functions of the drawn setting controls (UI layer, bottom)
+    let videoChannel = null, turboSender = null, turboStarting = false, viewerTurbo = false;
+    const isLaptopPage = ['localhost', '127.0.0.1'].includes(location.hostname);
+
+    const mode = () => document.querySelector('input[name=mode]:checked').value;
+    const outTrack = () => (mode() === 'zone' ? zoneTrack : displayTrack);
+
+    // ---- Pairing ----
+    async function setupBase() {
+      const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+      getInfo().then(({ port }) => document.querySelectorAll('.port').forEach((el) => (el.textContent = port)));
+      let base = location.origin;
+      if (local) {
+        const { lanIps, port } = await getInfo();
+        const lanUrls = lanIps.map((ip) => `http://${ip}:${port}`);
+        $('bases').innerHTML = lanUrls.map((u) => `<option value="${u}">`).join('');
+        let saved = null;
+        try { saved = localStorage.getItem('base'); } catch {}
+        // A remembered LAN link from an older port would send the phone to whatever runs there now.
+        const lan = saved?.match(/^http:\/\/[\d.]+:(\d+)\/?$/);
+        if (lan && Number(lan[1]) !== port) saved = null;
+        base = saved || lanUrls[0] || location.origin;
+      }
+      $('base').value = base;
+      $('base').oninput = () => {
+        try { localStorage.setItem('base', $('base').value.trim()); } catch {}
+        renderLinks();
+      };
+      renderLinks();
+    }
+
+    function renderLinks() {
+      const base = $('base').value.trim().replace(/\/$/, '');
+      // The key lets the phone that scans this join without asking; "latest" (no key) needs an Allow.
+      const roomUrl = `${base}/view?room=${encodeURIComponent(room)}&key=${encodeURIComponent(roomKey)}`;
+      $('roomLink').href = $('roomLink').textContent = roomUrl;
+      $('latestLink').href = $('latestLink').textContent = `${base}/view?latest`;
+      $('serverAddr').textContent = base.replace(/^https?:\/\//, '');
+      $('baseWarn').hidden = !base.startsWith('http://') || /localhost|127\.0\.0\.1/.test(base);
+      const qr = qrcode(0, 'M');
+      qr.addData(roomUrl);
+      qr.make();
+      $('qr').innerHTML = qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true });
+    }
+
+    async function init() {
+      ({ code: room, key: roomKey } = await api('/api/rooms', { method: 'POST' }));
+      $('code').textContent = room;
+      await setupBase();
+      signaling = openSignaling(room, 'host', {
+        key: roomKey,
+        onMessage,
+        onStatus: (s) => s !== 'online' && ($('viewerState').textContent = `server ${s}`),
+      });
+    }
+
+    async function onMessage(msg) {
+      if (msg.type === 'peer-joined' && msg.role === 'viewer') {
+        viewerPresent = true;
+        $('viewerState').textContent = 'joined';
+        await startCall();
+      } else if (msg.type === 'peer-left' && msg.role === 'viewer') {
+        viewerPresent = false;
+        $('viewerState').textContent = 'left';
+        closePeer();
+      } else if (msg.type === 'signal' && peer) {
+        await peer.handleSignal(msg.data).catch(console.error);
+      } else if (msg.type === 'viewer-request') {
+        askToAllow(msg.id);
+      }
+    }
+
+    // A phone that joined with only the room code (typed, or "join latest") waits for this.
+    let requestId = null;
+    function askToAllow(viewerId) {
+      requestId = viewerId;
+      $('approveBar').hidden = false;
+      $('approveAllow').focus();
+    }
+    async function answerRequest(allow) {
+      const viewerId = requestId;
+      requestId = null;
+      $('approveBar').hidden = true;
+      if (viewerId) await signaling.approve(viewerId, allow).catch(() => {});
+    }
+    $('approveAllow').onclick = () => answerRequest(true);
+    $('approveDeny').onclick = () => answerRequest(false);
+
+    // ---- WebRTC ----
+    function closePeer() {
+      callId++;
+      stopStats?.();
+      stopTurbo();
+      peer?.pc.close();
+      peer = sender = channel = cursorChannel = videoChannel = null;
+      viewerTurbo = false;
+      $('pcState').textContent = '–';
+      $('streamStats').textContent = '–';
+    }
+
+    // Capture no more pixels than the iPhone can show: less to encode, send and decode = less lag.
+    // Skipped in drop-zone mode, which crops the full-resolution capture afterwards.
+    async function fitCapture() {
+      if (!viewport || !displayTrack || mode() !== 'full') return;
+      // Cap the long side only, so landscape and portrait screens both keep their full shape.
+      const longSide = Math.max(viewport.w, viewport.h);
+      await displayTrack
+        .applyConstraints({ width: { max: longSide }, height: { max: longSide }, frameRate: { ideal: 60, max: 60 } })
+        .catch(() => {});
+    }
+
+    async function startCall() {
+      const track = outTrack();
+      if (!viewerPresent || !track) return;
+      closePeer();
+      const id = ++callId;
+      const { lanIps } = await getInfo();
+      const next = await createPeer(signaling.send, { lanIps, mungeRemote: boostStartBitrate });
+      if (id !== callId) return next.pc.close();
+      peer = next;
+      const { pc } = peer;
+      if (!outTrack()) return closePeer();
+      $('pcState').textContent = 'offering…';
+      pc.onconnectionstatechange = () => ($('pcState').textContent = pc.connectionState);
+      channel = pc.createDataChannel('input');
+      channel.onopen = () => {
+        sendControlState();
+        sendCursorSize();
+        sendCursorImage();
+      };
+      channel.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.t === 'viewport') {
+          viewport = msg;
+          fitCapture();
+          sizeHint();
+        } else if (msg.t === 'hello') {
+          viewerTurbo = Boolean(msg.turbo);
+          maybeStartTurbo();
+        } else if (msg.t === 'ping') {
+          channel.send(JSON.stringify({ t: 'pong', c: msg.c, h: performance.timeOrigin + performance.now() }));
+        } else if (msg.t === 'keyframe') {
+          turboSender?.requestKeyframe();
+        } else if (msg.t === 'turbo-failed') {
+          fallbackToStandard(new Error('phone cannot decode Turbo video'));
+        } else onInput(msg);
+      };
+      // Turbo video: ordered + reliable (H.264 frames depend on each other).
+      // Low priority: the cursor (high) and input (medium) on the same connection are sent ahead of it.
+      videoChannel = pc.createDataChannel('video', { ordered: true, priority: 'low' });
+      videoChannel.binaryType = 'arraybuffer';
+      videoChannel.onopen = maybeStartTurbo;
+      const transceiver = pc.addTransceiver(outTrack(), {
+        direction: 'sendonly',
+        sendEncodings: [{ maxBitrate: 20_000_000, maxFramerate: 60 }],
+      });
+      preferH264(transceiver);
+      sender = transceiver.sender;
+      applyQuality();
+      // Cursor positions: unordered + no retransmits, a late position is useless, the next one is coming.
+      cursorChannel = pc.createDataChannel('cursor', { ordered: false, maxRetransmits: 0, priority: 'high' });
+      cursorChannel.onopen = sendCursorSize;
+      stopStats = watchStats(pc, 'send', (text) => {
+        if (!turboSender) $('streamStats').textContent = text;
+      });
+      await pc.setLocalDescription(await pc.createOffer());
+      signaling.send({ sdp: pc.localDescription });
+    }
+
+    async function updateTrack() {
+      if (!sender) return startCall();
+      if (turboSender) {
+        stopTurbo();
+        return maybeStartTurbo();
+      }
+      await sender.replaceTrack(outTrack());
+      maybeStartTurbo();
+    }
+
+    // ---- Turbo video ----
+    // Laptop encodes with WebCodecs (hardware H.264) and sends frames over a data channel; the phone
+    // decodes and draws each one immediately, skipping the WebRTC jitter buffer. Falls back to
+    // Standard WebRTC video automatically if either side can't do it.
+    async function maybeStartTurbo() {
+      const track = outTrack();
+      if (turboSender || turboStarting || $('engine').value !== 'turbo' || !viewerTurbo || !turboSupported()) return;
+      if (!track || videoChannel?.readyState !== 'open') return;
+      turboStarting = true;
+      try {
+        turboSender = await startTurboSender({
+          track,
+          channel: videoChannel,
+          bitrate: $('quality').value === 'sharp' ? 25_000_000 : 15_000_000,
+          onStats: (text) => ($('streamStats').textContent = text),
+          onError: (err) => fallbackToStandard(err),
+        });
+        await sender?.replaceTrack(null); // stop the regular video, Turbo carries the picture now
+        if (channel?.readyState === 'open') channel.send(JSON.stringify({ t: 'engine', value: 'turbo' }));
+      } catch (err) {
+        fallbackToStandard(err);
+      } finally {
+        turboStarting = false;
+      }
+    }
+
+    function stopTurbo() {
+      turboSender?.stop();
+      turboSender = null;
+    }
+
+    async function fallbackToStandard(err) {
+      if (err) console.warn('Turbo off, using Standard video:', err);
+      stopTurbo();
+      if (sender && outTrack()) await sender.replaceTrack(outTrack()).catch(() => {});
+      if (channel?.readyState === 'open') channel.send(JSON.stringify({ t: 'engine', value: 'standard' }));
+      if (err && $('engine').value === 'turbo') $('streamStats').textContent = `Turbo unavailable (${err.message}); using Standard`;
+    }
+
+    $('engine').addEventListener('change', () => {
+      if ($('engine').value === 'turbo') maybeStartTurbo();
+      else fallbackToStandard();
+    });
+    $('quality').addEventListener('change', () => {
+      if (!turboSender) return;
+      stopTurbo();
+      maybeStartTurbo();
+    });
+
+    // ---- Screen capture ----
+    async function share() {
+      try {
+        displayStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: { ideal: 60, max: 60 }, width: { ideal: 3840 }, height: { ideal: 2160 },
+                   // With the iPhone screen, the phone draws its own instant cursor, so leave the slow one out of the video.
+                   cursor: virtualDisplay && navigator.mediaDevices.getSupportedConstraints().cursor ? 'never' : 'always',
+                   displaySurface: mode() === 'zone' || virtualDisplay ? 'monitor' : 'window' },
+          audio: false,
+          surfaceSwitching: 'include',
+          selfBrowserSurface: 'exclude',
+        });
+      } catch (err) {
+        $('shareState').textContent = `cancelled (${err.name})`;
+        return;
+      }
+      displayTrack = displayStream.getVideoTracks()[0];
+      applyQuality();
+      displayTrack.onended = stop;
+      const surface = displayTrack.getSettings().displaySurface;
+      $('shareState').textContent = `sharing ${surface ?? 'screen'}`;
+      displayTrack.addEventListener('settingschange', sendControlState);
+      await fitCapture();
+      $('share').hidden = true;
+      $('stop').hidden = false;
+      if (mode() === 'zone') enableZone();
+      await updateTrack();
+      sendControlState();
+    }
+
+    function stop() {
+      displayStream?.getTracks().forEach((t) => t.stop());
+      zoneTrack?.stop();
+      displayStream = displayTrack = zoneTrack = null;
+      closePeer();
+      zoneWin?.close();
+      zoneWin = null;
+      $('shareState').textContent = 'not sharing';
+      $('share').hidden = false;
+      $('stop').hidden = true;
+      sendControlState();
+      // Nobody can see the iPhone screen now, so bring the cursor back to the laptop.
+      if (virtualDisplay) api('/api/display?action=home', { method: 'POST' }).catch(() => {});
+    }
+
+    // ---- Phone models ----
+    for (const phone of PHONES) $('phoneList').append(new Option(phone.name, phone.id));
+
+    // ---- Remembered choices ----
+    const prefs = {
+      get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+      set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+    };
+    // Defaults v2 = Turbo + Smooth motion + Large text (smoothest). Clear choices saved under the old
+    // defaults once, so the new ones show up; everything else people picked stays.
+    if (prefs.get('defaultsVersion') !== '2') {
+      for (const id of ['engine', 'quality', 'textSize']) {
+        try { localStorage.removeItem(id); } catch {}
+      }
+      prefs.set('defaultsVersion', '2');
+    }
+    for (const id of ['phoneModel', 'textSize', 'orientation', 'vdPos', 'customW', 'customH', 'quality', 'engine']) {
+      const saved = prefs.get(id);
+      if (saved && (!$(id).options || [...$(id).options].some((o) => o.value === saved))) $(id).value = saved;
+      $(id).addEventListener('change', () => prefs.set(id, $(id).value));
+    }
+    const showCustom = () => {
+      const custom = $('phoneModel').value === 'custom';
+      $('customSize').hidden = !custom;
+      // Text size only applies to a phone model; a custom size is exact.
+      $('textSize').closest('fieldset').hidden = custom;
+    };
+    for (const id of ['phoneModel', 'textSize', 'orientation', 'customW', 'customH']) {
+      $(id).addEventListener('change', () => {
+        showCustom();
+        showSizePreview();
+      });
+    }
+    showCustom();
+
+    // The phone to size for: the one picked, or (Auto) the one that connected, or a common default.
+    const DEFAULT_PHONE = PHONES.find((p) => p.id === 'std-6.1-dyn');
+    function chosenPhone() {
+      const id = $('phoneModel').value;
+      if (id !== 'auto') return PHONES.find((p) => p.id === id) ?? DEFAULT_PHONE;
+      return detectPhone(viewport) ?? DEFAULT_PHONE;
+    }
+
+    // Size of the iPhone screen to create, in points (shown HiDPI, so 2 pixels per point).
+    function screenSize() {
+      const clamp = (n) => Math.min(Math.max(Math.round(n / 2) * 2, 300), 2560);
+      if ($('phoneModel').value === 'custom') {
+        return [clamp(Number($('customW').value) || 500), clamp(Number($('customH').value) || 700)];
+      }
+      const orientation = $('orientation').value;
+      const portrait = orientation === 'auto' ? !viewport || viewport.h >= viewport.w : orientation === 'portrait';
+      return screenFor(chosenPhone(), $('textSize').value, portrait).map(clamp);
+    }
+
+    function showSizePreview() {
+      const [w, h] = screenSize();
+      const auto = $('phoneModel').value === 'auto';
+      const detected = detectPhone(viewport);
+      $('detected').textContent = !auto ? '' : detected
+        ? `Detected: ${detected.name}`
+        : viewport
+          ? `Connected phone isn't in the list (${viewport.w} × ${viewport.h} px); sizing for ${DEFAULT_PHONE.name}.`
+          : `No phone connected yet; sizing for ${DEFAULT_PHONE.name}.`;
+      $('sizePreview').textContent = virtualDisplay ? '' : `Will be ${w} × ${h} points, ${w >= h ? 'landscape' : 'portrait'}.`;
+      showPlacement();
+    }
+
+    // ---- Video tuning ----
+    // Smooth: encoder keeps 60 fps and lowers resolution only under pressure (WebRTC's screen-share
+    // mode otherwise drops frames to keep text sharp, which feels laggy when moving things around).
+    function applyQuality() {
+      const smooth = $('quality').value !== 'sharp';
+      if (displayTrack) displayTrack.contentHint = smooth ? 'motion' : 'detail';
+      if (zoneTrack) zoneTrack.contentHint = smooth ? 'motion' : 'detail';
+      if (!sender) return;
+      const params = sender.getParameters();
+      params.degradationPreference = smooth ? 'maintain-framerate' : 'maintain-resolution';
+      sender.setParameters(params).catch(() => {});
+    }
+    $('quality').addEventListener('change', applyQuality);
+
+    // ---- Instant cursor for the phone ----
+    // The helper streams the cursor position (0..10000 on the iPhone screen); forward it straight to the
+    // phone over an unordered data channel. The phone draws it, so it moves with your hand.
+    // The size must not get lost (without it the phone can't size the cursor), so it goes on the
+    // reliable channel; the copy on the fast cursor channel is only a shortcut.
+    function sendCursorSize() {
+      const b = virtualDisplay?.bounds;
+      if (channel?.readyState === 'open') {
+        channel.send(JSON.stringify({ t: 'cursor-size', ...(b ? { w: b.width, h: b.height } : { off: true }) }));
+      }
+      if (cursorChannel?.readyState === 'open') cursorChannel.send(b ? JSON.stringify({ w: b.width, h: b.height }) : 'off');
+    }
+
+    let lastCursorImage = null;
+    function sendCursorImage() {
+      if (lastCursorImage && channel?.readyState === 'open') {
+        channel.send(JSON.stringify({ t: 'cursor-image', ...JSON.parse(lastCursorImage) }));
+      }
+    }
+
+    async function startCursorStream() {
+      if (cursorAbort) return;
+      const abort = (cursorAbort = new AbortController());
+      while (!abort.signal.aborted) {
+        try {
+          const res = await fetch('/api/cursor', { signal: abort.signal, cache: 'no-store' });
+          const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+          let buffer = '';
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += value;
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            let latest = null;
+            for (const line of lines) {
+              if (line.startsWith('img ')) {
+                // Cursor shape: rare and must not be lost, so it goes on the reliable channel.
+                lastCursorImage = line.slice(4);
+                sendCursorImage();
+              } else if (line) latest = line;
+            }
+            if (latest) $('cursorWhere').textContent = latest === 'off' ? 'On the laptop' : 'On the iPhone';
+            if (!latest || cursorChannel?.readyState !== 'open') continue;
+            cursorChannel.send(sharingVirtualDisplay() && latest !== 'off'
+              ? `${latest},${Math.round(performance.timeOrigin + performance.now())}`
+              : 'off');
+          }
+        } catch {
+          if (abort.signal.aborted) return;
+        }
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+
+    // ---- Hidden iPhone screen (virtual display) + remote control ----
+    function sharingVirtualDisplay() {
+      if (!virtualDisplay || !displayTrack || mode() !== 'full') return false;
+      const { width, height, displaySurface } = displayTrack.getSettings();
+      const { bounds } = virtualDisplay;
+      return displaySurface === 'monitor' && Math.abs(width / height - bounds.width / bounds.height) < 0.02;
+    }
+
+    function controlAllowed() {
+      return $('allowControl').checked && sharingVirtualDisplay();
+    }
+
+    function sendControlState() {
+      const allowed = controlAllowed();
+      let why = '';
+      if (!$('allowControl').checked) why = 'Control is off.';
+      else if (!virtualDisplay) why = 'Create the iPhone screen first.';
+      else if (!displayTrack) why = 'Share screen and pick the iPhone screen in Chrome\'s picker.';
+      else if (!sharingVirtualDisplay()) why = 'You are sharing a different screen. Stop, Share screen, then pick the “Entire screen” that matches the iPhone screen.';
+      $('controlState').textContent = allowed ? 'iPhone can control the iPhone screen.' : why;
+      if (channel?.readyState === 'open') channel.send(JSON.stringify({ t: 'control', allowed }));
+    }
+
+    // Batch input events; one request in flight at a time, coalescing pointer moves.
+    let inputQueue = [], inputBusy = false;
+    function onInput(event) {
+      if (!controlAllowed()) return;
+      const last = inputQueue[inputQueue.length - 1];
+      if (event.t === 'move' && last?.t === 'move') {
+        last.dx += event.dx;
+        last.dy += event.dy;
+      } else if (event.t === 'drag' && last?.t === 'drag') {
+        Object.assign(last, event);
+      } else if (event.t === 'scroll' && last?.t === 'scroll') {
+        last.dx += event.dx;
+        last.dy += event.dy;
+      } else {
+        inputQueue.push(event);
+      }
+      flushInput();
+    }
+
+    async function flushInput() {
+      if (inputBusy || !inputQueue.length) return;
+      inputBusy = true;
+      const events = inputQueue.splice(0);
+      try {
+        await api('/api/input', { method: 'POST', body: JSON.stringify({ events }) });
+      } catch (err) {
+        $('controlState').textContent = `Input error: ${err.message}`;
+      }
+      inputBusy = false;
+      flushInput();
+    }
+
+    // If the screen was made before the phone connected, say whether it matches the phone.
+    function sizeHint() {
+      showSizePreview();
+      if (!virtualDisplay || !viewport || $('phoneModel').value !== 'auto') return;
+      const [w, h] = screenSize();
+      const { width, height } = virtualDisplay.bounds;
+      if (Math.abs(width - w) > 4 || Math.abs(height - h) > 4) {
+        $('vdState').textContent += ` To match this phone exactly (${w} × ${h}), remove the screen and add it again.`;
+      }
+    }
+
+    function showDisplay(info) {
+      virtualDisplay = info?.active ? info : null;
+      if (virtualDisplay) startCursorStream();
+      else { cursorAbort?.abort(); cursorAbort = null; }
+      sendCursorSize();
+      $('vdStart').hidden = Boolean(virtualDisplay);
+      $('vdStop').hidden = !virtualDisplay;
+      for (const id of ['phoneModel', 'textSize', 'orientation', 'vdPos', 'customW', 'customH']) $(id).disabled = Boolean(virtualDisplay);
+      showSizePreview();
+      if (virtualDisplay) {
+        const { bounds, accessibility } = virtualDisplay;
+        const side = { right: 'right of', left: 'left of', above: 'above' }[virtualDisplay.position] ?? 'next to';
+        $('vdState').textContent =
+          `On, ${bounds.width} × ${bounds.height}, ${side} the laptop.` +
+          (accessibility ? '' : ' Touch control from the iPhone also needs Terminal allowed in System Settings → Privacy & Security → Accessibility.');
+        $('edgeName').textContent = { right: 'right', left: 'left', above: 'top' }[virtualDisplay.position] ?? 'right';
+      } else {
+        $('vdState').textContent = 'Not added yet.';
+      }
+      // The helper reports which shortcuts it actually holds (one asked for may be taken by another app).
+      if (virtualDisplay?.hotkeys) {
+        for (const name of Object.keys(hotkeys)) {
+          if (!virtualDisplay.hotkeys[name]) {
+            showHotkeyNote(`${hotkeyLabel(hotkeys[name])} is used by another app, so “${HOTKEY_TITLES[name]}” has no shortcut right now. Pick another.`);
+          }
+        }
+      }
+      syncSelects();
+      sendControlState();
+    }
+
+    async function startDisplay() {
+      const [width, height] = screenSize();
+      const position = $('vdPos').value;
+      $('vdStart').disabled = true;
+      $('vdState').textContent = 'Adding… the first time takes about 20 seconds.';
+      try {
+        showDisplay(await api(`/api/display?width=${width}&height=${height}&position=${position}&hotkey=${encodeURIComponent(hotkeys.jump)}&hotkey_center=${encodeURIComponent(hotkeys.center)}`, { method: 'POST' }));
+      } catch (err) {
+        $('vdState').textContent = `Could not create: ${err.message}`;
+      }
+      $('vdStart').disabled = false;
+    }
+
+    async function stopDisplay() {
+      showDisplay(await api('/api/display', { method: 'DELETE' }).catch(() => null));
+    }
+
+    async function initDisplay() {
+      if (!isLaptopPage) {
+        $('vdCard').querySelectorAll('button, select, input').forEach((el) => (el.disabled = true));
+        $('vdState').textContent = `Open this page at http://localhost:${(await getInfo()).port} on the laptop to use the hidden iPhone screen.`;
+        return;
+      }
+      showDisplay(await api('/api/display').catch(() => null));
+    }
+
+    // ---- iPhone drop zone ----
+    // Crop the whole-screen capture to the rectangle covered by the zone popup's content area.
+    // Whatever sits on top of the popup (VS Code, a terminal, a Chrome window) is what the iPhone sees.
+    function zoneRect(frame) {
+      if (!zoneWin || zoneWin.closed) return null;
+      const scale = frame.displayWidth / zoneWin.screen.width;
+      const left = zoneWin.screenX + (zoneWin.outerWidth - zoneWin.innerWidth) / 2;
+      const top = zoneWin.screenY + (zoneWin.outerHeight - zoneWin.innerHeight);
+      const even = (n) => Math.max(0, Math.floor(n / 2) * 2);
+      const x = even(left * scale);
+      const y = even(top * scale);
+      const width = even(Math.min(zoneWin.innerWidth * scale, frame.codedWidth - x));
+      const height = even(Math.min(zoneWin.innerHeight * scale, frame.codedHeight - y));
+      return width >= 16 && height >= 16 ? { x, y, width, height } : null;
+    }
+
+    function openZoneWindow() {
+      if (zoneWin && !zoneWin.closed) return zoneWin.focus();
+      zoneWin = window.open('/zone', 'iphone-zone', 'popup,width=844,height=390');
+    }
+
+    function enableZone() {
+      openZoneWindow();
+      if (!displayTrack || zoneTrack) return;
+      if (displayTrack.getSettings().displaySurface !== 'monitor') {
+        $('modeHint').textContent = 'Drop zone needs “Entire screen” in Chrome\'s picker. Click Stop and share again.';
+      }
+      // Frame-driven pipeline (not timers), so it keeps running while Chrome is in the background.
+      const processor = new MediaStreamTrackProcessor({ track: displayTrack });
+      const generator = new MediaStreamTrackGenerator({ kind: 'video' });
+      generator.contentHint = $('quality').value === 'sharp' ? 'detail' : 'motion';
+      processor.readable
+        .pipeThrough(new TransformStream({
+          transform(frame, controller) {
+            const rect = zoneRect(frame);
+            if (!rect) return controller.enqueue(frame);
+            controller.enqueue(new VideoFrame(frame, { visibleRect: rect }));
+            frame.close();
+          },
+        }))
+        .pipeTo(generator.writable)
+        .catch(() => {});
+      zoneTrack = generator;
+    }
+
+    $('share').onclick = share;
+    $('stop').onclick = stop;
+    $('modes').onchange = async () => {
+      $('modeHint').textContent = mode() === 'zone'
+        ? 'Share your Entire screen, then drag any window over the box that opens. Resize the box to change what the phone sees.'
+        : 'Chrome will ask what to share. Pick Entire screen, then the one called iPhone Screen.';
+      if (mode() === 'zone') enableZone();
+      else {
+        zoneWin?.close();
+        zoneWin = null;
+        zoneTrack?.stop(); // ends the crop pipeline too, instead of processing every frame for nothing
+        zoneTrack = null;
+      }
+      if (displayTrack) await updateTrack();
+      await fitCapture();
+      sendControlState();
+    };
+    $('vdStart').onclick = startDisplay;
+    $('vdStop').onclick = stopDisplay;
+    $('allowControl').onchange = sendControlState;
+    initDisplay();
+    window.addEventListener('beforeunload', () => zoneWin?.close());
+
+    // ---- Shortcuts ----
+    // Stored as "cmd+P"-style specs; the helper registers them system-wide while the iPhone screen is on.
+    //   jump:   back and forth between the laptop and the iPhone screen
+    //   center: cursor to the middle of the iPhone screen
+    const DEFAULT_HOTKEYS = { jump: 'cmd+P', center: 'cmd+O' };
+    const HOTKEY_TITLES = { jump: 'Jump between Mac and iPhone', center: 'Center on the iPhone' };
+    const HOTKEY_PREFS = { jump: 'hotkey', center: 'hotkeyCenter' };
+    const hotkeys = Object.fromEntries(Object.entries(DEFAULT_HOTKEYS).map(([n, d]) => [n, prefs.get(HOTKEY_PREFS[n]) || d]));
+    let recording = null; // name of the shortcut being recorded
+    const MOD_ORDER = [['ctrl', '⌃', 'Control'], ['alt', '⌥', 'Option'], ['shift', '⇧', 'Shift'], ['cmd', '⌘', 'Command']];
+    // What these do in most Mac apps, to warn before taking them over.
+    const inApps = (name) => `${name} in most apps`;
+    const COMMON = {
+      'cmd+C': inApps('Copy'), 'cmd+V': inApps('Paste'), 'cmd+X': inApps('Cut'), 'cmd+Z': inApps('Undo'),
+      'cmd+A': inApps('Select All'), 'cmd+S': inApps('Save'), 'cmd+F': inApps('Find'), 'cmd+P': inApps('Print'),
+      'cmd+O': inApps('Open'), 'cmd+R': 'Reload in browsers', 'cmd+L': 'the address bar in browsers',
+      'shift+cmd+P': 'the command palette in VS Code', 'cmd+Space': 'Spotlight',
+      'ctrl+Space': 'how macOS switches input source', 'ctrl+alt+Space': 'how macOS switches input source',
+    };
+
+    const hotkeyParts = (spec) => {
+      const parts = spec.split('+');
+      const key = parts.pop();
+      return { mods: MOD_ORDER.filter(([m]) => parts.includes(m)), key };
+    };
+    const hotkeyLabel = (spec) => {
+      const { mods, key } = hotkeyParts(spec);
+      return mods.map(([, s]) => s).join('') + key;
+    };
+    const rowOf = (name) => document.querySelector(`.shortcut-row[data-hotkey="${name}"]`);
+
+    function showHotkeyNote(text) {
+      $('hotkeyNote').textContent = text;
+    }
+
+    // Default note: which common commands the current shortcuts take over.
+    function commonNote() {
+      const taken = Object.values(hotkeys).filter((spec) => COMMON[spec]);
+      if (!taken.length) return '';
+      return `${taken.map((spec) => `${hotkeyLabel(spec)} is ${COMMON[spec]}`).join('; ')}. While the iPhone screen is on, ${taken.length > 1 ? 'they do' : 'it does'} this app's job instead.`;
+    }
+
+    function showHotkeys() {
+      for (const name of Object.keys(hotkeys)) {
+        const row = rowOf(name);
+        const box = row.querySelector('.keys');
+        box.replaceChildren();
+        if (recording === name) {
+          const k = document.createElement('kbd');
+          k.textContent = 'Press keys…';
+          k.className = 'recording';
+          box.append(k);
+        } else {
+          const { mods, key } = hotkeyParts(hotkeys[name]);
+          for (const [, symbol] of mods) box.append(Object.assign(document.createElement('kbd'), { textContent: symbol }));
+          box.append(Object.assign(document.createElement('kbd'), { textContent: key }));
+          box.setAttribute('aria-label', [...mods.map(([, , n]) => n), key].join(' '));
+        }
+        const change = row.querySelector('[data-act=change]');
+        change.textContent = recording === name ? 'Cancel' : 'Change';
+        change.setAttribute('aria-label', `${recording === name ? 'Cancel changing' : 'Change'} the shortcut for ${HOTKEY_TITLES[name]}`);
+        const reset = row.querySelector('[data-act=reset]');
+        reset.hidden = recording === name || hotkeys[name] === DEFAULT_HOTKEYS[name];
+        reset.textContent = `Reset to ${hotkeyLabel(DEFAULT_HOTKEYS[name])}`;
+      }
+      if (!recording) showHotkeyNote(commonNote());
+    }
+
+    // Turn a key press into a spec, or null while only modifiers are held / for keys we can't register.
+    function specFromEvent(e) {
+      let key = null;
+      if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3);
+      else if (/^Digit[0-9]$/.test(e.code)) key = e.code.slice(5);
+      else if (/^F([1-9]|1[0-2])$/.test(e.code)) key = e.code;
+      else if (e.code === 'Space') key = 'Space';
+      if (!key) return null;
+      const mods = [e.ctrlKey && 'ctrl', e.altKey && 'alt', e.shiftKey && 'shift', e.metaKey && 'cmd'].filter(Boolean);
+      return [...mods, key].join('+');
+    }
+
+    async function setHotkey(name, spec) {
+      const other = Object.keys(hotkeys).find((n) => n !== name && hotkeys[n] === spec);
+      if (other) {
+        showHotkeys();
+        return showHotkeyNote(`${hotkeyLabel(spec)} is already “${HOTKEY_TITLES[other]}”. Pick different keys.`);
+      }
+      const previous = hotkeys[name];
+      hotkeys[name] = spec;
+      showHotkeys();
+      if (virtualDisplay) {
+        const answer = await api(`/api/display?action=hotkey&name=${name}&spec=${encodeURIComponent(spec)}`, { method: 'POST' })
+          .catch((err) => ({ ok: false, error: err.message }));
+        if (!answer.ok) {
+          hotkeys[name] = previous;
+          showHotkeys();
+          return showHotkeyNote(`Couldn't use ${hotkeyLabel(spec)}: ${answer.error}. Still ${hotkeyLabel(previous)}.`);
+        }
+      }
+      prefs.set(HOTKEY_PREFS[name], spec);
+      showHotkeyNote(commonNote() ||
+        `Saved. ${hotkeyLabel(spec)} ${virtualDisplay ? 'works now' : 'will work once the iPhone screen is added'}.`);
+    }
+
+    addEventListener('keydown', (e) => {
+      if (!recording) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const name = recording;
+      if (e.key === 'Escape') {
+        recording = null;
+        return showHotkeys();
+      }
+      const spec = specFromEvent(e);
+      if (!spec) return; // still holding modifiers
+      if (!(e.metaKey || e.ctrlKey || e.altKey)) {
+        return showHotkeyNote('Include ⌘, ⌃ or ⌥, so normal typing keeps working.');
+      }
+      recording = null;
+      setHotkey(name, spec);
+    }, true);
+
+    for (const name of Object.keys(hotkeys)) {
+      const row = rowOf(name);
+      row.querySelector('[data-act=change]').onclick = () => {
+        recording = recording === name ? null : name;
+        showHotkeys();
+        if (recording) {
+          showHotkeyNote('Hold ⌘, ⌃ or ⌥ and press a letter, number, F-key or Space. Esc cancels.');
+          row.querySelector('.keys').focus();
+        }
+      };
+      row.querySelector('[data-act=reset]').onclick = () => setHotkey(name, DEFAULT_HOTKEYS[name]);
+    }
+    showHotkeys();
+
+    // ---- UI layer ----
+    // Settings stay real <select>s (saved choices and all logic read them); the page draws them as
+    // segmented buttons or an option list and keeps both in sync.
+    // A custom menu for long lists (the phone picker): pill button + listbox, like a macOS pop-up button.
+    function buildMenu(select) {
+      const wrap = document.createElement('div');
+      wrap.className = 'menu';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'menu-button';
+      button.id = `${select.id}Button`;
+      button.setAttribute('aria-haspopup', 'listbox');
+      button.setAttribute('aria-expanded', 'false');
+      const value = document.createElement('span');
+      value.className = 'menu-value';
+      button.append(value);
+      const labelId = select.getAttribute('aria-labelledby');
+      button.setAttribute('aria-labelledby', `${labelId} ${button.id}`);
+
+      const list = document.createElement('ul');
+      list.className = 'menu-list';
+      list.id = `${select.id}List`;
+      list.setAttribute('role', 'listbox');
+      list.setAttribute('aria-labelledby', labelId);
+      list.tabIndex = -1;
+      list.hidden = true;
+      button.setAttribute('aria-controls', list.id);
+
+      const items = [];
+      const addItem = (option) => {
+        const li = document.createElement('li');
+        li.id = `${select.id}Opt${items.length}`;
+        li.className = 'menu-item';
+        li.setAttribute('role', 'option');
+        li.dataset.value = option.value;
+        li.innerHTML = '<svg class="menu-check" width="12" height="10" viewBox="0 0 12 10" aria-hidden="true"><path d="M1 5.2l3.4 3.3L11 1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span></span>';
+        li.lastChild.textContent = option.textContent;
+        li.addEventListener('click', () => choose(option.value));
+        li.addEventListener('mousemove', () => setActive(items.indexOf(li), false));
+        list.append(li);
+        items.push(li);
+      };
+      for (const child of select.children) {
+        if (child.tagName === 'OPTGROUP') {
+          const heading = document.createElement('li');
+          heading.className = 'menu-group';
+          heading.setAttribute('role', 'presentation');
+          heading.textContent = child.label;
+          list.append(heading);
+          [...child.children].forEach(addItem);
+        } else {
+          addItem(child);
+        }
+      }
+
+      let active = -1;
+      function setActive(i, scroll = true) {
+        active = Math.max(0, Math.min(items.length - 1, i));
+        items.forEach((item, k) => item.classList.toggle('active', k === active));
+        list.setAttribute('aria-activedescendant', items[active].id);
+        if (scroll) items[active].scrollIntoView({ block: 'nearest' });
+      }
+      function open() {
+        if (select.disabled) return;
+        list.hidden = false;
+        button.setAttribute('aria-expanded', 'true');
+        setActive(Math.max(0, items.findIndex((item) => item.dataset.value === select.value)));
+        list.focus();
+      }
+      function close(returnFocus = true) {
+        if (list.hidden) return;
+        list.hidden = true;
+        button.setAttribute('aria-expanded', 'false');
+        if (returnFocus) button.focus();
+      }
+      function choose(v) {
+        close();
+        if (select.value === v) return;
+        select.value = v;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+
+      button.addEventListener('click', () => (list.hidden ? open() : close()));
+      button.addEventListener('keydown', (e) => {
+        if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) {
+          e.preventDefault();
+          open();
+        }
+      });
+      // Type-ahead: letters/digits jump to the next item containing what was typed ("15", "max", "se").
+      let typed = '', typedAt = 0;
+      list.addEventListener('keydown', (e) => {
+        const keys = {
+          ArrowDown: () => setActive(active + 1),
+          ArrowUp: () => setActive(active - 1),
+          Home: () => setActive(0),
+          End: () => setActive(items.length - 1),
+          Enter: () => choose(items[active].dataset.value),
+          ' ': () => choose(items[active].dataset.value),
+          Escape: () => close(),
+          Tab: () => close(false),
+        };
+        if (keys[e.key]) {
+          if (e.key !== 'Tab') e.preventDefault();
+          return keys[e.key]();
+        }
+        if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+          typed = performance.now() - typedAt > 700 ? e.key.toLowerCase() : typed + e.key.toLowerCase();
+          typedAt = performance.now();
+          const order = [...items.slice(active + 1), ...items.slice(0, active + 1)];
+          const hit = order.find((item) => item.textContent.toLowerCase().replace(/^iphone /, '').includes(typed))
+            ?? order.find((item) => item.textContent.toLowerCase().includes(typed));
+          if (hit) setActive(items.indexOf(hit));
+        }
+      });
+      document.addEventListener('pointerdown', (e) => {
+        if (!wrap.contains(e.target)) close(false);
+      });
+
+      wrap.append(button, list);
+      select.after(wrap);
+      const sync = () => {
+        value.textContent = select.selectedOptions[0]?.textContent ?? '';
+        for (const item of items) item.setAttribute('aria-selected', String(item.dataset.value === select.value));
+        button.disabled = select.disabled;
+      };
+      select.addEventListener('change', sync);
+      drawn.push(sync);
+      sync();
+    }
+
+    function enhanceSelect(select) {
+      const kind = select.dataset.ui;
+      if (kind === 'menu') return buildMenu(select);
+      const box = document.createElement('div');
+      box.className = kind === 'choices' ? 'choices' : 'seg';
+      box.setAttribute('role', 'group');
+      box.setAttribute('aria-label', select.getAttribute('aria-label') ?? '');
+      const buttons = [...select.options].map((option) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        if (kind === 'choices') {
+          b.innerHTML = '<span class="radio" aria-hidden="true"></span><span class="name"></span><span class="meta"></span>';
+          b.querySelector('.name').textContent = option.textContent;
+          b.querySelector('.meta').textContent = option.dataset.meta ?? '';
+        } else {
+          b.textContent = option.textContent;
+        }
+        b.addEventListener('click', () => {
+          if (select.disabled || select.value === option.value) return;
+          select.value = option.value;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        box.append(b);
+        return [option, b];
+      });
+      select.after(box);
+      const sync = () => {
+        for (const [option, b] of buttons) {
+          b.setAttribute('aria-pressed', String(select.value === option.value));
+          b.disabled = select.disabled;
+        }
+      };
+      select.addEventListener('change', sync);
+      drawn.push(sync);
+      sync();
+    }
+    function syncSelects() {
+      drawn.forEach((sync) => sync());
+    }
+    document.querySelectorAll('select[data-ui]').forEach(enhanceSelect);
+
+    // "Where does the phone sit?": a to-scale map like macOS Displays settings. Both screens in points
+    // (this Mac's from window.screen, the phone's from the current choices or the real added screen),
+    // arranged the way the helper places them: beside it top-aligned, or above it centered.
+    function showPlacement() {
+      const pos = virtualDisplay?.position ?? $('vdPos').value;
+      const [pw, ph] = virtualDisplay ? [virtualDisplay.bounds.width, virtualDisplay.bounds.height] : screenSize();
+      const lw = screen.width, lh = screen.height;
+      const GAP = 6;
+      // arrangement size in points, then scale to fit the box
+      const totalW = pos === 'above' ? Math.max(lw, pw) : lw + pw;
+      const totalH = pos === 'above' ? lh + ph : Math.max(lh, ph);
+      const box = $('placement').getBoundingClientRect();
+      const room = { w: Math.max(box.width, 200) - 24, h: 150 - 24 };
+      const k = Math.min((room.w - GAP) / totalW, (room.h - GAP) / totalH);
+      const L = { w: lw * k, h: lh * k }, P = { w: pw * k, h: ph * k };
+      const W = pos === 'above' ? Math.max(L.w, P.w) : L.w + P.w + GAP;
+      const H = pos === 'above' ? L.h + P.h + GAP : Math.max(L.h, P.h);
+      const ox = (room.w - W) / 2 + 12, oy = (room.h - H) / 2 + 12;
+      let l, p, edge;
+      if (pos === 'left') {
+        p = { x: ox, y: oy };
+        l = { x: ox + P.w + GAP, y: oy };
+        edge = { x: l.x - GAP / 2, y: oy + Math.min(L.h, P.h) / 2, rot: 180 };
+      } else if (pos === 'above') {
+        p = { x: ox + (W - P.w) / 2, y: oy };
+        l = { x: ox + (W - L.w) / 2, y: oy + P.h + GAP };
+        edge = { x: ox + W / 2, y: l.y - GAP / 2, rot: -90 };
+      } else {
+        l = { x: ox, y: oy };
+        p = { x: ox + L.w + GAP, y: oy };
+        edge = { x: p.x - GAP / 2, y: oy + Math.min(L.h, P.h) / 2, rot: 0 };
+      }
+      const place = (el, at, size) => Object.assign($(el).style, {
+        left: `${at.x}px`, top: `${at.y}px`, width: `${size.w}px`, height: `${size.h}px`,
+      });
+      place('mapLaptop', l, L);
+      place('mapPhone', p, P);
+      Object.assign($('mapEdge').style, { left: `${edge.x}px`, top: `${edge.y}px`, transform: `translate(-50%, -50%) rotate(${edge.rot}deg)` });
+      $('mapPhoneLabel').textContent = P.w > 46 && P.h > 30 ? `${pw}×${ph}` : '';
+
+      const phone = $('phoneModel').value === 'custom' ? 'iPhone screen' : chosenPhone().name.split(',')[0];
+      const side = { right: 'to the right of', left: 'to the left of', above: 'above' }[pos];
+      $('placementCaption').textContent = `${virtualDisplay ? 'iPhone screen' : phone} · ${pw} × ${ph} · ${side} this Mac`;
+      $('edgeName').textContent = { right: 'right', left: 'left', above: 'top' }[pos];
+    }
+    $('vdPos').addEventListener('change', showPlacement);
+    addEventListener('resize', showPlacement);
+    showSizePreview();
+
+    async function copy(text, button) {
+      try {
+        await navigator.clipboard.writeText(text);
+        const label = button.textContent;
+        button.textContent = 'Copied';
+        setTimeout(() => (button.textContent = label), 1200);
+      } catch {}
+    }
+    $('copyCode').onclick = () => room && copy(room, $('copyCode'));
+    $('copyLink').onclick = () => copy($('roomLink').href, $('copyLink'));
+
+    // Status dots and short labels, recomputed from the real state twice a second.
+    function setDot(id, state) {
+      $(id).classList.toggle('on', state === 'on');
+      $(id).classList.toggle('live', state === 'live');
+    }
+    // Tell the server whether the phone should draw the cursor (it streams positions straight to the phone).
+    let cursorVisibleSent = null;
+    function syncCursorVisible() {
+      const on = Boolean(virtualDisplay) && sharingVirtualDisplay();
+      if (on === cursorVisibleSent || !isLaptopPage) return;
+      cursorVisibleSent = on;
+      api(`/api/display?action=cursor-visible&on=${on ? 1 : 0}`, { method: 'POST' }).catch(() => (cursorVisibleSent = null));
+    }
+
+    function refreshStatus() {
+      syncCursorVisible();
+      const connected = peer?.pc.connectionState === 'connected';
+      setDot('viewerDot', viewerPresent ? 'on' : '');
+      setDot('connectDot', viewerPresent ? 'on' : '');
+      $('connectState').textContent = viewerPresent ? 'Connected' : 'Waiting for the phone';
+      setDot('vdDot', virtualDisplay ? 'on' : '');
+      $('vdShort').textContent = virtualDisplay ? 'On' : 'Off';
+      setDot('shareDot', displayTrack ? 'on' : '');
+      setDot('liveDot', connected && displayTrack ? 'live' : '');
+      $('liveState').textContent = connected && displayTrack ? 'Streaming' : displayTrack ? 'Sharing' : 'Not sharing';
+      $('shareTop').textContent = displayTrack ? 'Stop sharing' : 'Share screen';
+      $('shareTop').classList.toggle('pill-primary', !displayTrack);
+      $('shareTop').classList.toggle('pill-ghost', Boolean(displayTrack));
+      syncSelects();
+    }
+    $('shareTop').onclick = () => (displayTrack ? $('stop') : $('share')).click();
+    setInterval(refreshStatus, 500);
+    refreshStatus();
+
+    init().catch((err) => ($('shareState').textContent = `error: ${err.message}`));
+  </script>
+</body>
+</html>

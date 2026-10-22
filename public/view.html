@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Phone Screen">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#000000">
+  <title>Laptop screen</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="viewer">
+  <div id="join" class="join" hidden>
+    <div class="join-inner">
+      <span class="brand-name">Phone Screen</span>
+      <h1>Show your laptop here.</h1>
+      <p class="lede">Type the four digits on the laptop page, or point the Camera at its QR code.</p>
+      <form id="joinForm">
+        <fieldset>
+          <legend>Room code</legend>
+          <div class="digits" id="digits">
+            <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="one-time-code" aria-label="Digit 1">
+            <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 2">
+            <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 3">
+            <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 4">
+          </div>
+        </fieldset>
+        <p class="join-error" id="joinError" hidden></p>
+        <button class="btn btn-primary" style="margin-top:10px">Join</button>
+        <button type="button" class="btn btn-ghost" id="latest">Join the latest session</button>
+      </form>
+      <div class="join-foot">
+        <p>For full screen without Safari's bars, tap Share, then Add to Home Screen.</p>
+        <span id="joinHost"></span>
+      </div>
+    </div>
+  </div>
+
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="screen" class="screen" hidden></canvas>
+  <video id="fsVideo" class="fs-video" muted playsinline aria-hidden="true"></video>
+  <div id="status" class="overlay chrome">Connecting…</div>
+  <div id="stats" class="stats chrome" hidden></div>
+  <div id="touchDot" class="touch-dot"></div>
+  <div id="cursor" class="cursor" aria-hidden="true" hidden>
+    <svg id="cursorArrow" viewBox="0 0 16 24" width="16" height="24">
+      <path d="M1 1 L1 18.5 L5.2 14.6 L8 21.4 L10.9 20.2 L8.1 13.6 L13.8 13.6 Z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>
+    </svg>
+    <img id="cursorImg" alt="" hidden>
+  </div>
+  <button id="fs" class="fs icon-btn chrome" aria-label="Full screen" hidden>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"></path></svg>
+  </button>
+
+  <div id="tools" class="tools chrome" role="toolbar" aria-label="Controls" hidden>
+    <div class="seg-dark" role="group" aria-label="Touch mode">
+      <button type="button" data-touch="direct">Touch</button>
+      <button type="button" data-touch="trackpad">Trackpad</button>
+    </div>
+    <span class="sep" aria-hidden="true"></span>
+    <button type="button" id="kbBtn" aria-label="Keyboard">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"></rect><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M7.5 14h9"></path></svg>
+    </button>
+    <button type="button" class="key" data-mod="cmd" aria-label="Command, for the next key">⌘</button>
+    <button type="button" data-mod="ctrl" aria-label="Control, for the next key">ctrl</button>
+    <button type="button" class="key" data-mod="shift" aria-label="Shift, for the next key">⇧</button>
+    <button type="button" data-key="Escape">esc</button>
+    <button type="button" data-key="Tab">tab</button>
+    <button type="button" data-key="ArrowLeft" aria-label="Arrow left"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg></button>
+    <button type="button" data-key="ArrowUp" aria-label="Arrow up"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg></button>
+    <button type="button" data-key="ArrowDown" aria-label="Arrow down"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+    <button type="button" data-key="ArrowRight" aria-label="Arrow right"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></button>
+    <span class="sep" aria-hidden="true"></span>
+    <button type="button" id="statsBtn" aria-label="Show stream stats">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19V11M12 19V5M19 19v-5"></path></svg>
+    </button>
+  </div>
+  <button type="button" id="toolsToggle" class="tools-toggle icon-btn chrome" aria-label="Show or hide controls" hidden>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 8h14M5 16h14"></path></svg>
+  </button>
+  <textarea id="kb" class="kb" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Keyboard input"></textarea>
+
+  <script type="module">
+    import { api, openSignaling, createPeer, lowLatencyReceiver, watchStats } from './rtc.js';
+    import { createTurboReceiver, turboReceiveSupported } from './turbo.js';
+
+    const $ = (id) => document.getElementById(id);
+    const video = $('video');
+    const canvas = $('screen');
+    let turbo = null, turboActive = false;
+    // Whatever is showing the laptop screen right now: the Turbo canvas or the WebRTC <video>.
+    const surface = () => (turboActive ? canvas : video);
+    const mediaSize = () => (turboActive ? [canvas.width, canvas.height] : [video.videoWidth, video.videoHeight]);
+    const hasPicture = () => mediaSize()[0] > 0;
+    const params = new URLSearchParams(location.search);
+    let signaling, peer, channel = null, stopStats = null;
+    let controlAllowed = false;
+    let touchMode = 'direct'; // 'direct' | 'trackpad'
+    try { if (localStorage.getItem('touchMode') === 'trackpad') touchMode = 'trackpad'; } catch {}
+    const mods = new Set();
+
+    const setStatus = (text) => {
+      $('status').textContent = text;
+      $('status').hidden = !text;
+    };
+
+    // ---- Pairing + WebRTC ----
+    // key: the room's secret from the laptop's QR code / room link. Without it the laptop must click Allow.
+    function join(room, key = '') {
+      $('join').hidden = true;
+      setStatus(`Waiting for laptop (room ${room})…`);
+      const enc = encodeURIComponent;
+      history.replaceState(null, '', `?room=${enc(room)}${key ? `&key=${enc(key)}` : ''}${params.has('stats') ? '&stats' : ''}`);
+      openDirectCursor();
+      signaling = openSignaling(room, 'viewer', {
+        key,
+        onMessage,
+        onStatus: (s) => {
+          if (s === 'room-not-found') {
+            setStatus('');
+            $('joinError').textContent = `No laptop is using code ${room}. Check the code on the laptop page.`;
+            $('joinError').hidden = false;
+            digitInputs.forEach((i) => (i.value = ''));
+            $('join').hidden = false;
+          } else if (s === 'reconnecting') setStatus('Server unreachable, retrying…');
+          else if (s === 'too-many-tries') setStatus('Too many wrong codes. Wait a moment…');
+          else if (s === 'waiting-approval') setStatus('Waiting for the laptop to allow this iPhone…');
+          else if (s === 'online' && !peer) setStatus(`Waiting for laptop (room ${room})…`);
+        },
+      });
+    }
+
+    async function onMessage(msg) {
+      if (msg.type === 'peer-left') {
+        peer?.pc.close();
+        peer = channel = null;
+        setControl(false);
+        setStatus('Laptop disconnected');
+      } else if (msg.type === 'waiting-approval') {
+        setStatus('Waiting for the laptop to allow this iPhone…');
+      } else if (msg.type === 'denied' || msg.type === 'replaced') {
+        signaling.close();
+        peer?.pc.close();
+        peer = channel = null;
+        setControl(false);
+        setStatus('');
+        $('joinError').textContent = msg.type === 'denied'
+          ? "The laptop didn't allow this iPhone."
+          : 'Another device is now watching this laptop.';
+        $('joinError').hidden = false;
+        $('join').hidden = false;
+      } else if (msg.type === 'peer-joined') {
+        setStatus('Laptop found. Waiting for screen share…');
+      } else if (msg.type === 'signal') {
+        if (msg.data.sdp?.type === 'offer') await answer(msg.data);
+        else await peer?.handleSignal(msg.data);
+      }
+    }
+
+    async function answer(data) {
+      stopStats?.();
+      peer?.pc.close();
+      endTurbo();
+      peer = await createPeer(signaling.send);
+      const { pc } = peer;
+      setStatus('Connecting video…');
+      stopStats = watchStats(pc, 'recv', (text) => {
+        if (!turboActive) $('stats').textContent = text + cursorDelay.text;
+      });
+      pc.ontrack = (e) => {
+        lowLatencyReceiver(e.receiver);
+        video.srcObject = new MediaStream([e.track]);
+        video.play().catch(() => setStatus('Tap to play'));
+      };
+      pc.ondatachannel = (e) => {
+        if (e.channel.label === 'cursor') return setupCursorChannel(e.channel);
+        if (e.channel.label === 'video') return setupVideoChannel(e.channel);
+        channel = e.channel;
+        channel.onopen = () => {
+          sendViewport();
+          sendRaw({ t: 'hello', turbo: turboReceiveSupported() });
+          startClockSync();
+        };
+        channel.onmessage = (m) => {
+          const msg = JSON.parse(m.data);
+          if (msg.t === 'control') setControl(msg.allowed);
+          else if (msg.t === 'pong') onPong(msg);
+          else if (msg.t === 'cursor-image') setCursorImage(msg);
+          else if (msg.t === 'cursor-size') {
+            cursorScreen = msg.off ? null : { w: msg.w, h: msg.h };
+            rectCache = null;
+          }
+          else if (msg.t === 'engine' && msg.value !== 'turbo') showStandardVideo();
+        };
+        channel.onclose = () => setControl(false);
+      };
+      pc.onconnectionstatechange = () => {
+        const state = pc.connectionState;
+        if (state === 'connected') setStatus(hasPicture() ? '' : 'Connected, waiting for video…');
+        else if (state === 'failed') setStatus('Video could not connect. Phone and laptop cannot reach each other: try the same Wi-Fi, or set up a TURN relay.');
+        else setStatus(`Video: ${state}…`);
+      };
+      await peer.handleSignal(data);
+      await pc.setLocalDescription(await pc.createAnswer());
+      signaling.send({ sdp: pc.localDescription });
+    }
+
+    // Messages that aren't user input (always allowed, unlike send()).
+    function sendRaw(msg) {
+      if (channel?.readyState === 'open') channel.send(JSON.stringify(msg));
+    }
+
+    // ---- Turbo video (WebCodecs, no jitter buffer) ----
+    function setupVideoChannel(ch) {
+      ch.binaryType = 'arraybuffer';
+      turbo = createTurboReceiver({
+        canvas,
+        clockOffset: () => clock.offset,
+        onFrame() {
+          drawMirror();
+          if (turboActive) return;
+          turboActive = true;
+          canvas.hidden = false;
+          video.hidden = true;
+          rectCache = null;
+          setStatus('');
+          updateFsButton();
+        },
+        needKeyframe: () => sendRaw({ t: 'keyframe' }),
+        onUnsupported() {
+          sendRaw({ t: 'turbo-failed' });
+          endTurbo();
+        },
+      });
+      ch.onmessage = (m) => turbo?.onMessage(m.data);
+      ch.onclose = endTurbo;
+    }
+
+    // Turbo has no WebRTC video track, so its stats come from the receiver itself.
+    // Both engines get the measured cursor delay (laptop page → phone) appended.
+    const cursorDelay = { direct: { sum: 0, n: 0 }, relay: { sum: 0, n: 0 }, text: '' };
+    setInterval(() => {
+      const avg = (d) => (d.n ? Math.round(d.sum / d.n) : null);
+      const direct = avg(cursorDelay.direct), relay = avg(cursorDelay.relay);
+      cursorDelay.text = direct != null
+        ? ` · cursor ≈ ${direct} ms direct${relay != null ? ` (relay ${relay} ms)` : ''}`
+        : relay != null ? ` · cursor ≈ ${relay} ms relay` : '';
+      for (const d of [cursorDelay.direct, cursorDelay.relay]) d.sum = d.n = 0;
+      if (turboActive && turbo) $('stats').textContent = turbo.readStats() + cursorDelay.text;
+    }, 1000);
+
+    function endTurbo() {
+      turbo?.close();
+      turbo = null;
+      showStandardVideo();
+    }
+
+    // Laptop switched to Standard video: show the <video> again but keep the Turbo receiver ready.
+    function showStandardVideo() {
+      if (!turboActive) return;
+      turboActive = false;
+      canvas.hidden = true;
+      video.hidden = false;
+      rectCache = null;
+    }
+
+    // Clock sync with the laptop (for the "delay" number): offset = laptop clock − phone clock,
+    // taken from the ping with the shortest round trip.
+    const clock = { offset: null, bestRtt: Infinity, timer: null };
+    const wallNow = () => performance.timeOrigin + performance.now();
+    function startClockSync() {
+      clearInterval(clock.timer);
+      Object.assign(clock, { offset: null, bestRtt: Infinity });
+      const ping = () => sendRaw({ t: 'ping', c: wallNow() });
+      for (let i = 0; i < 5; i++) setTimeout(ping, i * 150);
+      clock.timer = setInterval(ping, 3000);
+    }
+    function onPong({ c, h }) {
+      const rtt = wallNow() - c;
+      if (rtt > clock.bestRtt * 1.5 && clock.offset != null) return;
+      clock.bestRtt = Math.min(clock.bestRtt, rtt);
+      clock.offset = h - (c + rtt / 2);
+    }
+
+    // Tell the laptop this screen's pixel size, in the way the phone is held right now, so it can
+    // size the iPhone screen to match and never send more pixels than the phone can show.
+    // (iOS keeps screen.width/height in portrait terms, so use the window shape for orientation.)
+    function sendViewport() {
+      if (channel?.readyState !== 'open') return;
+      const dpr = devicePixelRatio || 1;
+      const long = Math.round(Math.max(screen.width, screen.height) * dpr);
+      const short = Math.round(Math.min(screen.width, screen.height) * dpr);
+      const portrait = innerHeight > innerWidth;
+      channel.send(JSON.stringify({ t: 'viewport', w: portrait ? short : long, h: portrait ? long : short }));
+    }
+    let resizeTimer;
+    addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(sendViewport, 300);
+    });
+
+    // ---- Instant cursor ----
+    // The laptop streams where its mouse is on the iPhone screen; drawing it here skips the video
+    // pipeline, so the pointer moves with the hand even while the picture is a few frames behind.
+    const cursorEl = $('cursor');
+    let cursorScreen = null; // iPhone screen size in points, for the cursor's on-screen size
+    let rectCache = null, rectKey = '';
+    // Recomputed when the window or the picture size changes (Turbo can change size mid-stream).
+    function contentRectCached() {
+      if (!hasPicture()) return null;
+      const key = `${turboActive}:${mediaSize().join('x')}`;
+      if (!rectCache || key !== rectKey) {
+        rectCache = contentRect();
+        rectKey = key;
+      }
+      return rectCache;
+    }
+    for (const ev of ['resize', 'orientationchange']) addEventListener(ev, () => (rectCache = null));
+    video.addEventListener('resize', () => (rectCache = null));
+    video.addEventListener('loadedmetadata', () => (rectCache = null));
+
+    // Two ways cursor positions arrive:
+    //   direct: straight from the laptop's server (helper → server → phone), the fast path
+    //   relay:  through the laptop's Chrome page and the WebRTC data channel (backup, e.g. over ngrok)
+    // While the direct stream is connected, relayed positions are ignored (they're the same, only later).
+    let directCursor = null;
+    function openDirectCursor() {
+      directCursor?.close();
+      directCursor = new EventSource('/api/cursor-live');
+      directCursor.onmessage = (e) => handleCursorData(e.data, 'direct');
+      directCursor.onerror = () => {
+        // Over ngrok the warning page blocks this; the relay path takes over automatically.
+        if (directCursor.readyState === EventSource.CLOSED) directCursor = null;
+      };
+    }
+    const directConnected = () => directCursor?.readyState === EventSource.OPEN;
+
+    function setupCursorChannel(ch) {
+      ch.onmessage = (m) => {
+        const data = m.data;
+        if (data[0] === '{') {
+          cursorScreen = JSON.parse(data);
+          rectCache = null;
+          return;
+        }
+        handleCursorData(data, 'relay');
+      };
+      ch.onclose = () => !directConnected() && (cursorEl.hidden = true);
+    }
+
+    function handleCursorData(data, source) {
+        // "x,y,sentAt": x/y in 0..10000, sentAt = laptop clock in ms (for the cursor-delay stat).
+        const [px, py, sentAt] = data === 'off' ? [] : data.split(',').map(Number);
+        if (sentAt && clock.offset != null) {
+          const d = cursorDelay[source];
+          d.sum += wallNow() + clock.offset - sentAt;
+          d.n++;
+        }
+        if (source === 'relay' && directConnected()) return;
+        if (data === 'off') return (cursorEl.hidden = true);
+        const pos = [px / 10000, py / 10000];
+        const t = performance.now();
+        // Velocity from the last two samples, for a one-refresh look-ahead.
+        if (cursorPos && t - cursorAt < 50) {
+          const dt = Math.max(t - cursorAt, 4);
+          cursorVel = [(pos[0] - cursorPos[0]) / dt, (pos[1] - cursorPos[1]) / dt];
+        } else cursorVel = [0, 0];
+        cursorPos = pos;
+        cursorAt = t;
+        cursorEl.hidden = false;
+        drawMirror();
+        if (!cursorFrame) cursorFrame = requestAnimationFrame(drawCursor);
+    }
+
+    // Draw at most once per screen refresh, always with the newest position.
+    let cursorPos = null, cursorVel = [0, 0], cursorAt = 0, cursorFrame = 0;
+    let hotspot = [1, 1]; // the default arrow's tip
+    const LOOK_AHEAD_MS = 12; // ~ one 60 Hz refresh; only while the mouse is actually moving
+    function drawCursor() {
+      cursorFrame = 0;
+      const r = contentRectCached();
+      if (!r || !cursorPos) return;
+      const moving = performance.now() - cursorAt < 40;
+      const ahead = moving ? LOOK_AHEAD_MS : 0;
+      const nx = Math.min(Math.max(cursorPos[0] + cursorVel[0] * ahead, 0), 1);
+      const ny = Math.min(Math.max(cursorPos[1] + cursorVel[1] * ahead, 0), 1);
+      const x = r.left + nx * r.width;
+      const y = r.top + ny * r.height;
+      const scale = Math.max(r.width / laptopPointsWide(), 0.6); // phone px per laptop point
+      cursorEl.style.transform =
+        `translate3d(${x}px, ${y}px, 0) scale(${scale}) translate(${-hotspot[0]}px, ${-hotspot[1]}px)`;
+      cursorEl.hidden = false;
+      // Keep animating briefly after the last sample so the look-ahead settles back onto the real spot.
+      if (moving) cursorFrame = requestAnimationFrame(drawCursor);
+    }
+
+    // Width of the iPhone screen in laptop points. Normally sent by the laptop; if that message never
+    // arrived, the picture is HiDPI (2 pixels per point), so half its width is a good stand-in.
+    const laptopPointsWide = () => cursorScreen?.w ?? mediaSize()[0] / 2;
+
+    // The laptop's real cursor shape (I-beam, hand, resize…), sized in laptop points.
+    function setCursorImage({ png, w, h, hx, hy }) {
+      const img = $('cursorImg');
+      img.src = `data:image/png;base64,${png}`;
+      img.style.width = `${w}px`;
+      img.style.height = `${h}px`;
+      img.hidden = false;
+      $('cursorArrow').style.display = 'none';
+      hotspot = [hx, hy];
+      if (cursorPos && !cursorFrame) cursorFrame = requestAnimationFrame(drawCursor);
+    }
+
+    async function joinLatest() {
+      try {
+        join((await api('/api/latest')).code);
+      } catch {
+        $('join').hidden = false;
+        setStatus('');
+        $('joinError').textContent = 'No laptop is sharing right now. Open the laptop page first.';
+        $('joinError').hidden = false;
+      }
+    }
+
+    // ---- Remote control ----
+    function setControl(allowed) {
+      controlAllowed = allowed;
+      document.body.classList.toggle('controlling', allowed);
+      $('toolsToggle').hidden = !allowed;
+      $('tools').hidden = !allowed;
+      updateFsButton();
+    }
+
+    function send(event) {
+      if (!controlAllowed || channel?.readyState !== 'open') return;
+      if (mods.size && (event.t === 'key' || event.t === 'text')) {
+        event.mods = [...mods];
+        clearMods();
+      }
+      channel.send(JSON.stringify(event));
+    }
+
+    // The video is letterboxed (object-fit: contain); map a touch to 0..1 inside the picture.
+    function contentRect() {
+      const r = surface().getBoundingClientRect();
+      const [w, h] = mediaSize();
+      const scale = Math.min(r.width / w, r.height / h);
+      const width = w * scale;
+      const height = h * scale;
+      return { left: r.left + (r.width - width) / 2, top: r.top + (r.height - height) / 2, width, height };
+    }
+
+    function norm(touch) {
+      const r = contentRect();
+      return { x: (touch.clientX - r.left) / r.width, y: (touch.clientY - r.top) / r.height };
+    }
+
+    const TAP_SLOP = 8;          // px of movement before a touch counts as a drag
+    const LONG_PRESS_MS = 550;   // hold this long without moving = right click
+    const TRACKPAD_SPEED = 1.6;  // trackpad mode: cursor moves this many times the finger distance
+    let gesture = null;
+
+    function midpoint(touches) {
+      const [a, b] = touches;
+      return { clientX: (a.clientX + b.clientX) / 2, clientY: (a.clientY + b.clientY) / 2 };
+    }
+
+    // Instant local feedback: the video round trip takes a moment, the dot doesn't.
+    function showDot(touch) {
+      if (touchMode !== 'direct') return;
+      const dot = $('touchDot');
+      dot.style.transform = `translate(${touch.clientX}px, ${touch.clientY}px)`;
+      dot.classList.add('on');
+    }
+    const hideDot = () => $('touchDot').classList.remove('on');
+
+    function onTouchStart(e) {
+      if (!controlAllowed || !hasPicture()) return;
+      e.preventDefault();
+      if (e.touches.length === 1) showDot(e.touches[0]);
+      clearTimeout(gesture?.longPress);
+      if (e.touches.length >= 2) {
+        gesture = { kind: 'scroll', last: midpoint(e.touches) };
+        return;
+      }
+      const t = e.touches[0];
+      gesture = { kind: 'pending', start: t, last: t, moved: false, done: false };
+      gesture.longPress = setTimeout(() => {
+        if (gesture?.kind !== 'pending' || gesture.moved) return;
+        gesture.done = true;
+        send(touchMode === 'direct' ? { t: 'rightclick', ...norm(gesture.start) } : { t: 'rightclick' });
+      }, LONG_PRESS_MS);
+    }
+
+    function onTouchMove(e) {
+      if (!gesture) return;
+      e.preventDefault();
+      const r = contentRect();
+      if (gesture.kind === 'scroll') {
+        if (e.touches.length < 2) return;
+        const m = midpoint(e.touches);
+        const dx = (m.clientX - gesture.last.clientX) / r.width;
+        const dy = (m.clientY - gesture.last.clientY) / r.height;
+        gesture.last = m;
+        send(touchMode === 'direct' ? { t: 'scroll', ...norm(m), dx, dy } : { t: 'scroll', dx, dy });
+        return;
+      }
+      const t = e.touches[0];
+      showDot(t);
+      if (!gesture.moved && Math.hypot(t.clientX - gesture.start.clientX, t.clientY - gesture.start.clientY) < TAP_SLOP) return;
+      if (gesture.done) return;
+      if (!gesture.moved) {
+        gesture.moved = true;
+        clearTimeout(gesture.longPress);
+        if (touchMode === 'direct') send({ t: 'down', ...norm(gesture.start) });
+      }
+      if (touchMode === 'direct') {
+        send({ t: 'drag', ...norm(t) });
+      } else {
+        send({
+          t: 'move',
+          dx: ((t.clientX - gesture.last.clientX) / r.width) * TRACKPAD_SPEED,
+          dy: ((t.clientY - gesture.last.clientY) / r.height) * TRACKPAD_SPEED,
+        });
+      }
+      gesture.last = t;
+    }
+
+    function onTouchEnd(e) {
+      if (!gesture) return;
+      e.preventDefault();
+      if (e.touches.length) return; // wait until every finger is up
+      hideDot();
+      clearTimeout(gesture.longPress);
+      const g = gesture;
+      gesture = null;
+      if (g.kind !== 'pending' || g.done) return;
+      if (g.moved) {
+        if (touchMode === 'direct') send({ t: 'up', ...norm(g.last) });
+      } else {
+        send(touchMode === 'direct' ? { t: 'click', ...norm(g.start) } : { t: 'click' });
+      }
+    }
+
+    for (const el of [video, canvas]) {
+      for (const [type, fn] of [['touchstart', onTouchStart], ['touchmove', onTouchMove], ['touchend', onTouchEnd], ['touchcancel', onTouchEnd]]) {
+        el.addEventListener(type, fn, { passive: false });
+      }
+    }
+
+    // ---- Keyboard ----
+    const kb = $('kb');
+    kb.addEventListener('beforeinput', (e) => {
+      e.preventDefault();
+      if (e.inputType === 'insertText' || e.inputType === 'insertFromPaste' || e.inputType === 'insertReplacementText') {
+        const text = e.data ?? e.dataTransfer?.getData('text/plain');
+        if (text) send({ t: 'text', s: text });
+      } else if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') {
+        send({ t: 'key', k: 'Enter' });
+      } else if (e.inputType.startsWith('deleteContentBackward') || e.inputType.startsWith('deleteWordBackward')) {
+        send({ t: 'key', k: 'Backspace' });
+      } else if (e.inputType.startsWith('deleteContentForward')) {
+        send({ t: 'key', k: 'Delete' });
+      }
+    });
+    // Fallback for browsers that don't cancel beforeinput: send whatever landed and clear it.
+    kb.addEventListener('input', () => {
+      if (kb.value) send({ t: 'text', s: kb.value });
+      kb.value = '';
+    });
+
+    function clearMods() {
+      mods.clear();
+      document.querySelectorAll('[data-mod]').forEach((b) => b.classList.remove('on'));
+    }
+
+    $('kbBtn').onclick = () => (document.activeElement === kb ? kb.blur() : kb.focus());
+    const modeButtons = document.querySelectorAll('[data-touch]');
+    const showMode = () => modeButtons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.touch === touchMode)));
+    modeButtons.forEach((b) => (b.onclick = () => {
+      touchMode = b.dataset.touch;
+      try { localStorage.setItem('touchMode', touchMode); } catch {}
+      showMode();
+    }));
+    showMode();
+    document.querySelectorAll('[data-key]').forEach((b) => (b.onclick = () => send({ t: 'key', k: b.dataset.key })));
+    document.querySelectorAll('[data-mod]').forEach((b) => (b.onclick = () => {
+      const on = !mods.has(b.dataset.mod);
+      on ? mods.add(b.dataset.mod) : mods.delete(b.dataset.mod);
+      b.classList.toggle('on', on);
+    }));
+    // Keep the keyboard open while tapping toolbar buttons.
+    $('tools').addEventListener('mousedown', (e) => e.preventDefault());
+    $('tools').addEventListener('touchstart', (e) => {
+      if (document.activeElement === kb) { e.preventDefault(); e.target.closest('button')?.click(); }
+    }, { passive: false });
+    $('toolsToggle').onclick = () => ($('tools').hidden = !$('tools').hidden);
+    $('statsBtn').onclick = () => ($('stats').hidden = !$('stats').hidden);
+    if (params.has('stats')) $('stats').hidden = false;
+
+    // ---- View-only bits ----
+    video.onplaying = () => {
+      setStatus('');
+      updateFsButton();
+    };
+    document.body.onclick = (e) => {
+      if (e.target === video && video.paused) video.play();
+    };
+    // ---- Fullscreen ----
+    // iPhone Safari can only make a <video> fullscreen, and native fullscreen shows nothing else of the
+    // page (no Turbo canvas, no drawn cursor). So the picture and the cursor are drawn together into one
+    // canvas, whose live stream plays in a tiny video that goes fullscreen. Where the whole page can go
+    // fullscreen (iPad, desktop browsers), that is used instead. From the Home Screen it's already full.
+    const fsVideo = $('fsVideo');
+    const mirror = { canvas: document.createElement('canvas'), ctx: null, active: false };
+    mirror.ctx = mirror.canvas.getContext('2d', { alpha: false });
+    const isStandalone = () =>
+      navigator.standalone === true || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+
+    function updateFsButton() {
+      $('fs').hidden = isStandalone() || !hasPicture() || Boolean(document.fullscreenElement);
+    }
+
+    const ARROW = new Path2D('M1 1 L1 18.5 L5.2 14.6 L8 21.4 L10.9 20.2 L8.1 13.6 L13.8 13.6 Z');
+    function drawMirror() {
+      if (!mirror.active) return;
+      const [w, h] = mediaSize();
+      if (!w) return;
+      const { canvas: c, ctx } = mirror;
+      if (c.width !== w || c.height !== h) {
+        c.width = w;
+        c.height = h;
+      }
+      ctx.drawImage(surface(), 0, 0, w, h);
+      if (!cursorPos || cursorEl.hidden) return;
+      const k = w / laptopPointsWide(); // picture pixels per laptop point
+      const x = cursorPos[0] * w, y = cursorPos[1] * h;
+      const img = $('cursorImg');
+      if (!img.hidden && img.complete && img.naturalWidth) {
+        ctx.drawImage(img, x - hotspot[0] * k, y - hotspot[1] * k, parseFloat(img.style.width) * k, parseFloat(img.style.height) * k);
+      } else {
+        ctx.save();
+        ctx.translate(x - k, y - k);
+        ctx.scale(k, k);
+        ctx.fillStyle = '#000';
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.2;
+        ctx.lineJoin = 'round';
+        ctx.fill(ARROW);
+        ctx.stroke(ARROW);
+        ctx.restore();
+      }
+    }
+    // Standard (WebRTC) video: redraw the mirror on every new video frame.
+    function mirrorVideoTick() {
+      if (!mirror.active) return;
+      if (!turboActive) drawMirror();
+      video.requestVideoFrameCallback?.(mirrorVideoTick);
+    }
+
+    function startMirror() {
+      if (mirror.active) return;
+      mirror.active = true;
+      drawMirror();
+      fsVideo.srcObject = mirror.canvas.captureStream(60);
+      fsVideo.play().catch(() => {});
+      video.requestVideoFrameCallback?.(mirrorVideoTick);
+    }
+    function stopMirror() {
+      mirror.active = false;
+      fsVideo.srcObject?.getTracks().forEach((t) => t.stop());
+      fsVideo.srcObject = null;
+    }
+    fsVideo.addEventListener('webkitendfullscreen', stopMirror);
+
+    $('fs').onclick = async () => {
+      const root = document.documentElement;
+      if (document.fullscreenEnabled && root.requestFullscreen) {
+        try {
+          await root.requestFullscreen({ navigationUI: 'hide' });
+          return updateFsButton();
+        } catch {}
+      }
+      if (!fsVideo.webkitEnterFullscreen) return;
+      startMirror();
+      // iOS only allows fullscreen from the tap itself; if the mirror video isn't ready yet, a second tap is.
+      if (fsVideo.readyState >= 1) {
+        try { return fsVideo.webkitEnterFullscreen(); } catch {}
+      }
+      fsVideo.addEventListener('loadedmetadata', () => {
+        try { fsVideo.webkitEnterFullscreen(); } catch { setStatus('Tap the full-screen button again'); setTimeout(() => setStatus(''), 2500); }
+      }, { once: true });
+    };
+    document.addEventListener('fullscreenchange', updateFsButton);
+    // Four digit boxes: typing moves forward, backspace moves back, pasting fills them all.
+    const digitInputs = [...$('digits').querySelectorAll('input')];
+    const typedCode = () => digitInputs.map((i) => i.value).join('');
+    digitInputs.forEach((input, i) => {
+      input.addEventListener('input', () => {
+        const digits = input.value.replace(/\D/g, '');
+        if (digits.length > 1) {
+          digits.slice(0, 4).split('').forEach((d, k) => (digitInputs[k].value = d));
+          digitInputs[Math.min(digits.length, 4) - 1].focus();
+        } else {
+          input.value = digits;
+          if (digits && i < 3) digitInputs[i + 1].focus();
+        }
+        $('joinError').hidden = true;
+        if (/^\d{4}$/.test(typedCode())) $('joinForm').requestSubmit();
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !input.value && i > 0) digitInputs[i - 1].focus();
+      });
+    });
+    $('joinForm').onsubmit = (e) => {
+      e.preventDefault();
+      const code = typedCode();
+      if (/^\d{4}$/.test(code)) join(code);
+      else {
+        $('joinError').textContent = 'Enter all four digits.';
+        $('joinError').hidden = false;
+      }
+    };
+    $('joinHost').textContent = location.host;
+    $('latest').onclick = joinLatest;
+
+    if (params.has('room')) {
+      join(params.get('room'), params.get('key') ?? '');
+    }
+    else if (params.has('latest')) joinLatest();
+    else { $('join').hidden = false; setStatus(''); }
+  </script>
+</body>
+</html>

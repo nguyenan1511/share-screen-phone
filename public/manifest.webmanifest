@@ -1,0 +1,11 @@
+{
+  "name": "Phone Screen",
+  "short_name": "Phone Screen",
+  "description": "Your Mac's second screen, on this iPhone.",
+  "start_url": "/view?latest",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000"
+}

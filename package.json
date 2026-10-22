@@ -1,0 +1,14 @@
+{
+  "name": "share-screen-iphone",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Share your laptop screen (Chrome) to an iPhone browser over WebRTC.",
+  "scripts": {
+    "start": "node server.js",
+    "build:native": "mkdir -p native/.build && swiftc -O -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
