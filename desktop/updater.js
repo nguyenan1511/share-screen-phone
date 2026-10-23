@@ -95,8 +95,8 @@ exit 0
 //  - update downloads and the installer script left in the temp folder
 //  - a Tether.app.old left behind by an interrupted swap
 //  - mounted Tether installer disks (old .dmg windows) — never the one Tether runs from
-//  - after an update: Tether's own stale Screen Recording entries, so System Settings doesn't keep showing an
-//    old "Tether" that looks on but no longer works; macOS asks fresh on the next share
+//  - after an update: Tether's own stale Screen Recording and Accessibility entries, so System Settings doesn't
+//    keep showing an old "Tether" that looks on but no longer works; macOS asks fresh on the next use
 export async function cleanUpOldVersions() {
   if (!app.isPackaged) return;
   const appPath = path.resolve(process.execPath, '..', '..', '..');
@@ -124,7 +124,7 @@ export async function cleanUpOldVersions() {
   const previous = (await readFile(marker, 'utf8').catch(() => '')).trim();
   const current = app.getVersion();
   if (previous && previous !== current && bundleId) {
-    await run('/usr/bin/tccutil', ['reset', 'ScreenCapture', bundleId]).catch(() => {});
+    for (const service of ['ScreenCapture', 'Accessibility']) await run('/usr/bin/tccutil', ['reset', service, bundleId]).catch(() => {});
   }
   if (previous !== current) await writeFile(marker, current).catch(() => {});
 }

@@ -431,7 +431,13 @@ async function handleDisplay(req, res, url) {
     // Re-read (or, with prompt=1, ask macOS for) the helper's Accessibility permission; the helper answers with a
     // fresh "ready" line, which updates helper.info.
     if (!helper?.info) return json(res, 409, { error: 'no virtual display' });
-    helperSend({ t: url.searchParams.get('prompt') === '1' ? 'axprompt' : 'status' });
+    const prompt = url.searchParams.get('prompt') === '1';
+    // In the Mac app, an ad-hoc build that was updated keeps an old Accessibility entry that looks on but isn't:
+    // clear Tether's own entry first, so macOS asks fresh (same as removing and re-adding it by hand).
+    if (prompt && process.env.TETHER_APP_ID && !helper.info.accessibility) {
+      await new Promise((resolve) => execFile('/usr/bin/tccutil', ['reset', 'Accessibility', process.env.TETHER_APP_ID], () => resolve()));
+    }
+    helperSend({ t: prompt ? 'axprompt' : 'status' });
     await new Promise((resolve) => setTimeout(resolve, 300));
     return json(res, 200, { accessibility: Boolean(helper?.info?.accessibility) });
   }
@@ -470,7 +476,7 @@ async function handleDisplay(req, res, url) {
 }
 let displayQueue = Promise.resolve();
 
-const INPUT_TYPES = new Set(['click', 'rightclick', 'down', 'drag', 'up', 'move', 'scroll', 'key', 'text']);
+const INPUT_TYPES = new Set(['click', 'rightclick', 'down', 'drag', 'up', 'move', 'scroll', 'key', 'text', 'missioncontrol', 'desktop']);
 
 async function handleInput(req, res) {
   if (!isLaptop(req)) return json(res, 403, { error: 'input only accepted from the laptop page on localhost' });

@@ -167,9 +167,11 @@ func flags(_ mods: [String]) -> CGEventFlags {
 }
 
 func key(_ code: CGKeyCode, mods: [String]) {
+  // Real arrow keys carry the fn + keypad flags; macOS's own shortcuts (⌃← / ⌃→ switch desktops) only match with them.
+  let arrow: CGEventFlags = (123...126).contains(code) ? [.maskSecondaryFn, .maskNumericPad] : []
   for down in [true, false] {
     let e = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
-    e?.flags = flags(mods)
+    e?.flags = flags(mods).union(arrow)
     e?.post(tap: .cghidEventTap)
   }
 }
@@ -205,10 +207,14 @@ func handle(_ cmd: [String: Any]) {
   }
   let mods = cmd["mods"] as? [String] ?? []
 
+  let touched = num("x") != nil // a touch at a spot on the iPhone (Touch mode), not the trackpad
   switch cmd["t"] as? String {
-  case "click": click(point())
-  case "rightclick": click(point(), button: .right)
+  case "click", "rightclick":
+    if touched { borrowCursor() }
+    click(point(), button: cmd["t"] as? String == "rightclick" ? .right : .left)
+    giveCursorBack(after: 0.4) // long enough for a double tap to land in the same place
   case "down":
+    if touched { borrowCursor() }
     let p = point()
     buttonDown = true
     mouse(.mouseMoved, p)
@@ -218,15 +224,27 @@ func handle(_ cmd: [String: Any]) {
   case "up":
     mouse(.leftMouseUp, point(), clicks: lastClick.count)
     buttonDown = false
+    giveCursorBack(after: 0.2)
   case "move":
+    keepCursor() // trackpad mode moves the pointer on purpose
     let c = clampToDisplay(cursor())
     let p = clampToDisplay(CGPoint(x: c.x + (num("dx") ?? 0) * bounds.width, y: c.y + (num("dy") ?? 0) * bounds.height))
     mouse(buttonDown ? .leftMouseDragged : .mouseMoved, p)
   case "scroll":
-    if num("x") != nil { mouse(.mouseMoved, point()) }
+    if touched {
+      borrowCursor()
+      mouse(.mouseMoved, point())
+    }
     scroll(dx: num("dx") ?? 0, dy: num("dy") ?? 0)
+    giveCursorBack(after: 0.6) // re-armed by every scroll event, so it runs once the scrolling (and fling) stops
   case "key":
     if let name = cmd["k"] as? String, let code = keyCodes[name] { key(code, mods: mods) }
+  case "missioncontrol":
+    // Opening the app works whatever shortcut the user set for Mission Control.
+    NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Mission Control.app"))
+  case "desktop":
+    // Next / previous desktop (Space): macOS's ⌃→ / ⌃←.
+    key(keyCodes[(cmd["dir"] as? String) == "left" ? "ArrowLeft" : "ArrowRight"]!, mods: ["ctrl"])
   case "text":
     if let text = cmd["s"] as? String { typeText(text, mods: mods) }
   case "status":
@@ -243,6 +261,35 @@ func handle(_ cmd: [String: Any]) {
   default:
     break
   }
+}
+
+// ---- Sharing the one pointer between the laptop mouse and iPhone touches ----
+// A touch on the iPhone needs the Mac's pointer at that spot (clicks and scrolls go where the pointer is). If the
+// laptop's mouse was using it on the laptop screen, put it back there right after, so both can be used at once.
+var touchReturn: CGPoint?   // where the laptop had the pointer before an iPhone touch borrowed it
+var touchReturnToken = 0
+
+func borrowCursor() {
+  touchReturnToken += 1 // cancels a pending return: the pointer is needed again
+  let c = cursor()
+  if touchReturn == nil && !bounds.contains(c) { touchReturn = c }
+}
+
+func giveCursorBack(after delay: Double) {
+  guard touchReturn != nil else { return }
+  touchReturnToken += 1
+  let token = touchReturnToken
+  DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+    guard token == touchReturnToken, !buttonDown, let p = touchReturn else { return }
+    touchReturn = nil
+    // Only if the pointer is still on the iPhone screen: if the laptop mouse already moved it away, leave it.
+    if bounds.contains(cursor()) { warp(p) }
+  }
+}
+
+func keepCursor() {
+  touchReturnToken += 1
+  touchReturn = nil
 }
 
 // ---- Laptop mouse/keyboard on the iPhone screen ----

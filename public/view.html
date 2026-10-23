@@ -70,6 +70,16 @@
       <button type="button" data-touch="trackpad">Trackpad</button>
     </div>
     <span class="sep" aria-hidden="true"></span>
+    <button type="button" id="mcBtn" aria-label="Mission Control">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="6" rx="1.2"></rect><rect x="13" y="4" width="8" height="6" rx="1.2"></rect><rect x="3" y="14" width="8" height="6" rx="1.2"></rect><rect x="13" y="14" width="8" height="6" rx="1.2"></rect></svg>
+    </button>
+    <button type="button" data-desktop="left" aria-label="Previous desktop">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="5" width="14" height="14" rx="2"></rect><path d="M4 9l-2 3 2 3"></path></svg>
+    </button>
+    <button type="button" data-desktop="right" aria-label="Next desktop">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="14" height="14" rx="2"></rect><path d="M20 9l2 3-2 3"></path></svg>
+    </button>
+    <span class="sep" aria-hidden="true"></span>
     <button type="button" id="kbBtn" aria-label="Keyboard">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"></rect><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M7.5 14h9"></path></svg>
     </button>
@@ -449,9 +459,10 @@
 
     const GESTURES = {
       direct: [['Tap', 'Click'], ['Double tap', 'Double click'], ['Drag', 'Scroll'], ['Hold', 'Right click'],
-        ['Hold, then drag', 'Select text, move windows'], ['Two fingers', 'Scroll']],
+        ['Hold, then drag', 'Select text, move windows'], ['Two fingers', 'Scroll'],
+        ['Three fingers up', 'Mission Control'], ['Three fingers ← →', 'Switch desktop']],
       trackpad: [['Slide', 'Move the pointer'], ['Tap', 'Click where the pointer is'], ['Hold', 'Right click'],
-        ['Two fingers', 'Scroll']],
+        ['Two fingers', 'Scroll'], ['Three fingers up', 'Mission Control'], ['Three fingers ← →', 'Switch desktop']],
     };
     const seenGestureHelp = () => { try { return localStorage.getItem('gestureHelpSeen') === '1'; } catch { return false; } };
     function showGestureHelp() {
@@ -498,6 +509,14 @@
     const MOMENTUM_FRICTION = 0.94; // per 16 ms frame
     let gesture = null;
     let momentum = 0;            // requestAnimationFrame id of a running fling
+
+    function centroid(touches) {
+      const list = [...touches];
+      return {
+        clientX: list.reduce((sum, t) => sum + t.clientX, 0) / list.length,
+        clientY: list.reduce((sum, t) => sum + t.clientY, 0) / list.length,
+      };
+    }
 
     function midpoint(touches) {
       const [a, b] = touches;
@@ -559,7 +578,15 @@
       e.preventDefault();
       stopMomentum(); // a touch catches a fling, like on iPhone
       clearTimeout(gesture?.hold);
-      if (e.touches.length >= 2) {
+      if (e.touches.length >= 3) {
+        // Three fingers: swipe up = Mission Control, left / right = switch desktop (like the Mac trackpad).
+        if (gesture?.kind === 'drag') send({ t: 'up', ...norm(gesture.last) });
+        hideDot();
+        const m = centroid(e.touches);
+        gesture = { kind: 'three', start: m, last: m };
+        return;
+      }
+      if (e.touches.length === 2) {
         if (gesture?.kind === 'drag') send({ t: 'up', ...norm(gesture.last) });
         hideDot();
         const m = midpoint(e.touches);
@@ -584,6 +611,10 @@
       if (!gesture) return;
       e.preventDefault();
       const r = contentRect();
+      if (gesture.kind === 'three') {
+        if (e.touches.length >= 3) gesture.last = centroid(e.touches);
+        return;
+      }
       if (gesture.kind === 'scroll') {
         if (e.touches.length < 2) return;
         const m = midpoint(e.touches);
@@ -628,6 +659,12 @@
       clearTimeout(gesture.hold);
       const g = gesture;
       gesture = null;
+      if (g.kind === 'three') {
+        const dx = g.last.clientX - g.start.clientX, dy = g.last.clientY - g.start.clientY;
+        if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) send({ t: 'desktop', dir: dx < 0 ? 'right' : 'left' });
+        else if (dy < -50) send({ t: 'missioncontrol' });
+        return;
+      }
       if (g.kind === 'pending') send(touchMode === 'direct' ? { t: 'click', ...norm(g.start) } : { t: 'click' });
       else if (g.kind === 'held') send({ t: 'rightclick', ...norm(g.start) });
       else if (g.kind === 'drag') send({ t: 'up', ...norm(g.last) });
@@ -641,24 +678,56 @@
     }
 
     // ---- Keyboard ----
+    // The hidden textarea always holds two invisible characters with the caret after them: iOS doesn't send
+    // delete at all from an empty field, so without them Backspace would never reach the Mac. Every edit is
+    // cancelled (or undone right after) and forwarded as key presses / text instead.
     const kb = $('kb');
+    const PAD = '​​';
+    function resetKb() {
+      if (kb.value !== PAD) kb.value = PAD;
+      kb.setSelectionRange(PAD.length, PAD.length);
+    }
+    kb.addEventListener('focus', resetKb);
+    // Backup for delete: iOS also sends a keydown for ⌫. If no edit event follows it (iOS sometimes skips them),
+    // send Backspace from here; if one does, that one sends it and this is dropped.
+    let pendingDelete = 0;
+    kb.addEventListener('keydown', (e) => {
+      if (e.key !== 'Backspace' || e.isComposing) return;
+      clearTimeout(pendingDelete);
+      const word = e.altKey;
+      pendingDelete = setTimeout(() => {
+        pendingDelete = 0;
+        send(word ? { t: 'key', k: 'Backspace', mods: ['alt'] } : { t: 'key', k: 'Backspace' });
+        resetKb();
+      }, 60);
+    });
+    const deleteHandled = () => { clearTimeout(pendingDelete); pendingDelete = 0; };
     kb.addEventListener('beforeinput', (e) => {
       e.preventDefault();
+      if (e.inputType.startsWith('delete')) deleteHandled();
       if (e.inputType === 'insertText' || e.inputType === 'insertFromPaste' || e.inputType === 'insertReplacementText') {
         const text = e.data ?? e.dataTransfer?.getData('text/plain');
         if (text) send({ t: 'text', s: text });
       } else if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') {
         send({ t: 'key', k: 'Enter' });
-      } else if (e.inputType.startsWith('deleteContentBackward') || e.inputType.startsWith('deleteWordBackward')) {
+      } else if (e.inputType === 'deleteWordBackward') {
+        send({ t: 'key', k: 'Backspace', mods: ['alt'] }); // ⌥⌫ deletes a word on the Mac too
+      } else if (e.inputType.startsWith('delete') && !e.inputType.endsWith('Forward')) {
         send({ t: 'key', k: 'Backspace' });
-      } else if (e.inputType.startsWith('deleteContentForward')) {
+      } else if (e.inputType.startsWith('delete')) {
         send({ t: 'key', k: 'Delete' });
       }
+      resetKb();
     });
-    // Fallback for browsers that don't cancel beforeinput: send whatever landed and clear it.
+    // Fallback for browsers that don't cancel beforeinput: work out what changed around the padding.
     kb.addEventListener('input', () => {
-      if (kb.value) send({ t: 'text', s: kb.value });
-      kb.value = '';
+      const value = kb.value;
+      if (value.startsWith(PAD) && value.length > PAD.length) send({ t: 'text', s: value.slice(PAD.length) });
+      else if (value.length < PAD.length) {
+        deleteHandled();
+        for (let i = value.length; i < PAD.length; i++) send({ t: 'key', k: 'Backspace' });
+      }
+      resetKb();
     });
 
     function clearMods() {
@@ -689,6 +758,8 @@
     }, { passive: false });
     $('toolsToggle').onclick = () => ($('tools').hidden = !$('tools').hidden);
     $('statsBtn').onclick = () => ($('stats').hidden = !$('stats').hidden);
+    $('mcBtn').onclick = () => send({ t: 'missioncontrol' });
+    document.querySelectorAll('[data-desktop]').forEach((b) => (b.onclick = () => send({ t: 'desktop', dir: b.dataset.desktop })));
     $('helpBtn').onclick = () => ($('gestureHelp').hidden ? showGestureHelp() : ($('gestureHelp').hidden = true));
     $('gestureOk').onclick = () => {
       $('gestureHelp').hidden = true;

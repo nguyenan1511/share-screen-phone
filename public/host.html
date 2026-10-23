@@ -765,10 +765,14 @@
       $('axGrant').hidden = !($('allowControl').checked && virtualDisplay && !virtualDisplay.accessibility);
       if (!$('allowControl').checked) why = 'Off: the phone only shows the screen.';
       else if (!virtualDisplay) why = 'Works on the iPhone screen: add it above first.';
-      else if (!virtualDisplay.accessibility) why = `macOS needs to allow ${inDesktopApp ? 'Tether' : 'Terminal'} to control the Mac: click Allow control, turn it on in Accessibility, then come back here.`;
+      else if (!virtualDisplay.accessibility) why = inDesktopApp
+        ? 'macOS needs to allow Tether to control the Mac: click Allow control, then turn on Tether in Accessibility.'
+        : 'macOS needs to allow Terminal to control the Mac: click Allow control, then turn on Terminal in Accessibility.';
       else if (!displayTrack) why = 'Share screen and pick the iPhone screen in Chrome\'s picker.';
       else if (!sharingVirtualDisplay()) why = 'You are sharing a different screen. Stop, Share screen, then pick the “Entire screen” that matches the iPhone screen.';
-      $('controlState').textContent = allowed ? 'iPhone can control the iPhone screen.' : why;
+      $('controlState').textContent = allowed
+        ? 'iPhone can control the iPhone screen. Your laptop mouse keeps working too: after each touch the pointer goes back to where it was.'
+        : why;
       if (channel?.readyState === 'open') channel.send(JSON.stringify({ t: 'control', allowed }));
     }
 
