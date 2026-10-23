@@ -8,13 +8,17 @@
   <link rel="icon" href="/icons/favicon-32.png" sizes="32x32" type="image/png">
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 </head>
 <body class="host">
   <nav class="global-nav" aria-label="App">
     <div class="global-nav-inner">
       <span class="app-name">Tether</span>
-      <span class="nav-meta"><span class="mono" id="serverAddr"></span></span>
+      <span class="nav-end">
+        <span class="nav-meta"><span class="mono" id="serverAddr"></span></span>
+        <button type="button" class="theme-toggle" data-theme-toggle>Appearance: Auto</button>
+      </span>
     </div>
   </nav>
 

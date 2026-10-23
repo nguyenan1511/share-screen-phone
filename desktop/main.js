@@ -1,6 +1,6 @@
 // Tether for Mac (Electron): runs the same local server as `npm start`, with the prebuilt macOS
 // helper, and shows the laptop page in its own window. Phones still connect to this Mac over Wi-Fi.
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, session, shell, systemPreferences } from 'electron';
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, nativeTheme, session, shell, systemPreferences } from 'electron';
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -123,7 +123,7 @@ async function openWindow() {
     minWidth: 720,
     minHeight: 600,
     title: 'Tether',
-    backgroundColor: '#f5f5f7',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#f5f5f7', // the page's background, no flash
     webPreferences: { contextIsolation: true, sandbox: true, preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)) },
   });
   const home = `http://localhost:${port}/`;

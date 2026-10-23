@@ -5,6 +5,7 @@
   --primary: #2f5bff;          /* Tether blue (the logo's): links, buttons, selection. White text 5.2:1 */
   --focus: #2f5bff;            /* focus ring + selected chip */
   --primary-on-dark: #5b7fff;  /* lighter Tether blue for dark surfaces */
+  --link: #2f5bff;             /* blue text: links, ghost buttons, checkmarks */
   --ink: #1d1d1f;
   --ink-80: #333333;
   --muted: #6e6e73;            /* secondary text, 4.9:1 on parchment */
@@ -16,12 +17,74 @@
   --tile-1: #272729;
   --tile-2: #2a2a2c;
   --chip-on-photo: rgba(210, 210, 215, 0.64);
+  --danger: #b3261e;
+  --dot-off: #c7c7cc;
+  --glass: rgba(245, 245, 247, 0.8);  /* sticky sub-nav */
+  --menu-shadow: 0 10px 30px rgba(0, 0, 0, 0.12); /* a floating menu needs to read as above the card */
+  --phone-tint: #eaefff;
+  --notice-line: #c9d6ff;
+  --notice-bg: #f4f7ff;
+  --code-bg: #1d1d1f;
   --r-sm: 8px;
   --r-md: 11px;
   --r-lg: 18px;
   --font: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
   --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  color-scheme: light;
 }
+
+/* Dark mode: follows the Mac / iPhone setting, unless the Appearance button (theme.js) picked one. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --primary: #3d66ff;        /* white text 4.6:1 */
+    --focus: #7f9cff;
+    --link: #7f9cff;           /* 7:1 on the dark canvas */
+    --ink: #f5f5f7;
+    --ink-80: #d1d1d6;
+    --muted: #98989d;
+    --hairline: #38383a;
+    --hairline-soft: rgba(255, 255, 255, 0.12);
+    --canvas: #1c1c1e;
+    --parchment: #000000;
+    --pearl: #111113;
+    --danger: #ff6961;
+    --dot-off: #48484a;
+    --glass: rgba(0, 0, 0, 0.72);
+    --menu-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    --phone-tint: #18214a;
+    --notice-line: #2c3a6b;
+    --notice-bg: #10162e;
+    --code-bg: #2c2c2e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme='dark'] {
+  --primary: #3d66ff;
+  --focus: #7f9cff;
+  --link: #7f9cff;
+  --ink: #f5f5f7;
+  --ink-80: #d1d1d6;
+  --muted: #98989d;
+  --hairline: #38383a;
+  --hairline-soft: rgba(255, 255, 255, 0.12);
+  --canvas: #1c1c1e;
+  --parchment: #000000;
+  --pearl: #111113;
+  --danger: #ff6961;
+  --dot-off: #48484a;
+  --glass: rgba(0, 0, 0, 0.72);
+  --menu-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --phone-tint: #18214a;
+  --notice-line: #2c3a6b;
+  --notice-bg: #10162e;
+  --code-bg: #2c2c2e;
+  color-scheme: dark;
+}
+/* The logo's dark stroke disappears on black: swap in the light-stroke copy. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .brand-mark { content: url('/icons/mark-dark.svg'); }
+}
+:root[data-theme='dark'] .brand-mark { content: url('/icons/mark-dark.svg'); }
 
 * { box-sizing: border-box; }
 body {
@@ -35,7 +98,7 @@ body {
 button, input, select { font: inherit; letter-spacing: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity: 0.4; }
-a { color: var(--primary); text-decoration: none; overflow-wrap: anywhere; }
+a { color: var(--link); text-decoration: none; overflow-wrap: anywhere; }
 a:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 code, .mono { font-family: var(--mono); font-size: 0.82em; letter-spacing: 0; }
@@ -62,9 +125,9 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .pill-primary { background: var(--primary); color: #fff; }
 a.pill { display: inline-flex; align-items: center; text-decoration: none; }
 a.pill-primary:hover { text-decoration: none; color: #fff; }
-.pill-ghost { background: transparent; color: var(--primary); border-color: var(--primary); }
+.pill-ghost { background: transparent; color: var(--link); border-color: var(--link); }
 .pill-sm { min-height: 32px; padding: 7px 15px; font-size: 14px; letter-spacing: -0.224px; }
-.link-button { border: 0; background: none; padding: 0; color: var(--primary); font-size: 14px; }
+.link-button { border: 0; background: none; padding: 0; color: var(--link); font-size: 14px; }
 
 /* ---------- form bits ---------- */
 .field {
@@ -106,7 +169,7 @@ a.pill-primary:hover { text-decoration: none; color: #fff; }
   background: var(--canvas);
   border: 1px solid var(--hairline);
   border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12); /* a floating menu needs to read as above the card */
+  box-shadow: var(--menu-shadow);
   outline: none;
 }
 .menu-group {
@@ -128,7 +191,7 @@ a.pill-primary:hover { text-decoration: none; color: #fff; }
   line-height: 1.3;
   cursor: default;
 }
-.menu-check { flex: none; width: 14px; color: var(--primary); visibility: hidden; }
+.menu-check { flex: none; width: 14px; color: var(--link); visibility: hidden; }
 .menu-item[aria-selected='true'] .menu-check { visibility: visible; }
 .menu-item.active { background: var(--primary); color: #fff; }
 .menu-item.active .menu-check { color: #fff; }
@@ -139,13 +202,13 @@ a.pill-primary:hover { text-decoration: none; color: #fff; }
 .label { display: block; font-size: 14px; letter-spacing: -0.224px; color: var(--muted); margin-bottom: 6px; }
 .hint { margin: 0; font-size: 14px; letter-spacing: -0.224px; line-height: 1.43; color: var(--muted); text-wrap: pretty; }
 .caption { margin: 10px 0 14px; font-size: 14px; letter-spacing: -0.224px; color: var(--muted); text-align: center; }
-.warn { margin: 0; font-size: 14px; color: #b3261e; }
+.warn { margin: 0; font-size: 14px; color: var(--danger); }
 .body-copy { margin: 0; color: var(--ink); text-wrap: pretty; }
 .body-copy.small { font-size: 14px; letter-spacing: -0.224px; line-height: 1.43; color: var(--muted); }
 
 /* Status: a tiny dot + quiet text. Blue = active (the system's one accent). */
 .status { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; letter-spacing: -0.224px; color: var(--muted); white-space: nowrap; }
-.dot { width: 7px; height: 7px; border-radius: 50%; background: #c7c7cc; flex: none; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dot-off); flex: none; }
 .dot.on, .dot.live { background: var(--primary); }
 
 /* Option chips drawn from a hidden <select> (enhanceSelect in host.html): configurator-style pills. */
@@ -200,12 +263,15 @@ kbd.recording { border: 2px solid var(--focus); padding: 0 12px; font-size: 14px
 }
 .global-nav .app-name { font-weight: 600; }
 .global-nav .nav-meta { color: #ccc; }
+.nav-end { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.theme-toggle { border: 0; background: none; padding: 4px 0; color: #ccc; font-size: 12px; letter-spacing: -0.12px; }
+.theme-toggle:hover { color: #fff; }
 
 .sub-nav {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: rgba(245, 245, 247, 0.8);
+  background: var(--glass);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
   border-bottom: 1px solid var(--hairline-soft);
@@ -288,7 +354,7 @@ kbd.recording { border: 2px solid var(--focus); padding: 0 12px; font-size: 14px
 .touch-row .hint:empty { display: none; }
 
 .connect { display: flex; flex-wrap: wrap; gap: 32px; align-items: center; }
-.qr { width: 168px; height: 168px; flex: none; padding: 14px; background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-md); }
+.qr { width: 168px; height: 168px; flex: none; padding: 14px; background: #fff; border: 1px solid var(--hairline); border-radius: var(--r-md); }
 .qr svg { display: block; width: 100%; height: auto; }
 .connect-info { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
 .code { font-size: 40px; font-weight: 600; line-height: 1.1; letter-spacing: 0.12em; font-variant-numeric: tabular-nums; }
@@ -300,7 +366,7 @@ kbd.recording { border: 2px solid var(--focus); padding: 0 12px; font-size: 14px
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  color: var(--primary);
+  color: var(--link);
   font-size: 14px;
   letter-spacing: -0.224px;
   list-style: none;
@@ -336,7 +402,7 @@ kbd.recording { border: 2px solid var(--focus); padding: 0 12px; font-size: 14px
   transition: left 240ms ease, top 240ms ease, width 240ms ease, height 240ms ease;
 }
 .placement .laptop { border: 1.5px solid var(--ink); border-radius: 5px; background: var(--canvas); color: var(--muted); }
-.placement .phone { border: 2px solid var(--primary); border-radius: 7px; background: #eaefff; color: var(--primary); font-size: 11px; font-variant-numeric: tabular-nums; }
+.placement .phone { border: 2px solid var(--primary); border-radius: 7px; background: var(--phone-tint); color: var(--link); font-size: 11px; font-variant-numeric: tabular-nums; }
 .placement .edge {
   position: absolute;
   width: 0;
@@ -367,7 +433,7 @@ kbd.recording { border: 2px solid var(--focus); padding: 0 12px; font-size: 14px
 .zone { height: 100vh; padding: 12px; background: var(--parchment); }
 .zone-box {
   height: 100%;
-  border: 2px dashed #c7c7cc;
+  border: 2px dashed var(--dot-off);
   border-radius: var(--r-lg);
   display: flex;
   flex-direction: column;
@@ -476,7 +542,7 @@ kbd.recording { border: 2px solid var(--focus); padding: 0 12px; font-size: 14px
 .tools button.on { background: var(--primary-on-dark); color: #fff; }
 .tools .seg-dark { display: flex; padding: 2px; border-radius: 9999px; background: rgba(255, 255, 255, 0.1); }
 .tools .seg-dark button { height: 30px; padding: 0 12px; border-radius: 9999px; color: #ccc; }
-.tools .seg-dark button[aria-pressed='true'] { background: #fff; color: var(--ink); }
+.tools .seg-dark button[aria-pressed='true'] { background: #fff; color: #1d1d1f; }
 .tools .sep { width: 1px; height: 20px; margin: 0 4px; background: rgba(255, 255, 255, 0.18); flex: none; }
 
 /* Native-fullscreen carrier (see Fullscreen in view.html): must stay rendered, so it's tiny and invisible, not display:none. */
@@ -575,7 +641,7 @@ kbd.recording { border: 2px solid var(--focus); padding: 0 12px; font-size: 14px
   font-weight: 600;
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
-  caret-color: var(--primary);
+  caret-color: var(--link);
 }
 .digits input:focus { outline: none; border: 2px solid var(--focus); }
 .join .btn {
@@ -587,8 +653,8 @@ kbd.recording { border: 2px solid var(--focus); padding: 0 12px; font-size: 14px
 }
 .join .btn:active { transform: scale(0.95); }
 .join .btn-primary { background: var(--primary); color: #fff; margin-top: 10px; }
-.join .btn-ghost { background: transparent; color: var(--primary); }
-.join-error { margin: 0; font-size: 14px; color: #b3261e; }
+.join .btn-ghost { background: transparent; color: var(--link); }
+.join-error { margin: 0; font-size: 14px; color: var(--danger); }
 .join-foot { margin-top: auto; padding-top: 32px; display: flex; flex-direction: column; gap: 10px; }
 .join-foot p { margin: 0; font-size: 14px; letter-spacing: -0.224px; color: var(--muted); text-wrap: pretty; }
 .join-foot span { font-size: 12px; letter-spacing: -0.12px; color: var(--muted); }
@@ -601,7 +667,7 @@ kbd.recording { border: 2px solid var(--focus); padding: 0 12px; font-size: 14px
 /* ---------- install guide (/install) ---------- */
 .guide { max-width: 760px; }
 .guide .sections { margin-top: 24px; }
-.notice { border-color: #c9d6ff; background: #f4f7ff; }
+.notice { border-color: var(--notice-line); background: var(--notice-bg); }
 .step-title { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.17; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .step-title span:not(.step-n) { color: var(--muted); }
 .step-n {
@@ -623,6 +689,6 @@ kbd.recording { border: 2px solid var(--focus); padding: 0 12px; font-size: 14px
 .faq { margin: 0; display: flex; flex-direction: column; gap: 18px; }
 .faq dt { font-weight: 600; }
 .faq dd { margin: 4px 0 0; color: var(--ink-80); }
-.cmd { display: block; margin-top: 8px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--ink); color: #fff; font-size: 13px; overflow-x: auto; white-space: nowrap; }
+.cmd { display: block; margin-top: 8px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--code-bg); color: #fff; font-size: 13px; overflow-x: auto; white-space: nowrap; }
 .guide-foot { margin: 32px 0 0; }
 .guide > .card { margin-top: 24px; }
