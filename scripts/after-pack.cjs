@@ -8,6 +8,8 @@ exports.default = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return;
   // Universal builds pack each architecture into a "-temp" folder first; sign only the merged app.
   if (context.appOutDir.endsWith('-temp')) return;
+  // Developer ID release (scripts/release-mac.mjs found a certificate): electron-builder signs it properly next.
+  if (process.env.TETHER_SIGN_IDENTITY) return;
   const app = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' });
   execFileSync('codesign', ['--verify', '--deep', '--strict', app], { stdio: 'inherit' });

@@ -28,6 +28,13 @@ export function isNewer(candidate, current) {
 const run = (cmd, args) => new Promise((resolve, reject) =>
   execFile(cmd, args, (err, stdout, stderr) => (err ? reject(new Error(`${cmd}: ${stderr || err.message}`)) : resolve(stdout.trim()))));
 
+// The Apple Team ID a bundle is signed with, or null (ad-hoc / unsigned). codesign prints details on stderr.
+const teamOf = (bundle) => new Promise((resolve) =>
+  execFile('/usr/bin/codesign', ['-dv', bundle], (_err, _out, stderr) => {
+    const id = String(stderr).match(/^TeamIdentifier=(\S+)/m)?.[1];
+    resolve(id && id !== 'not' ? id : null);
+  }));
+
 // GET with redirects, as a response stream.
 function get(url, redirects = 5) {
   return new Promise((resolve, reject) => {
@@ -176,6 +183,9 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
       const newApp = path.join(unpacked, 'Tether.app');
       await stat(newApp);
       await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', newApp]);
+      // Once Tether is Developer ID signed, only accept updates signed by the same Apple team.
+      const team = await teamOf(appPath);
+      if (team && (await teamOf(newApp)) !== team) throw new Error(`update isn't signed by team ${team}`);
       const version = await run('/usr/bin/plutil', ['-extract', 'CFBundleShortVersionString', 'raw', '-o', '-',
         path.join(newApp, 'Contents', 'Info.plist')]);
       if (version !== feed.version) throw new Error(`bundle is ${version}, feed said ${feed.version}`);

@@ -21,7 +21,8 @@ next free one and prints it.
 Full details: [RELEASING.md](RELEASING.md). In short:
 1. Commit your changes.
 2. `npm version patch --no-git-tag-version`, then commit `package.json` + `package-lock.json`.
-3. `npm run release:mac` — builds, uploads to S3, publishes `mac/latest.json` last.
+3. `npm run release:mac` — builds, uploads to S3, publishes `mac/latest.json` last, then deletes
+   the previous version from S3 (only the newest is kept).
 
 Installed apps (0.1.3+) find the new version within ~4 hours, download it in the background
 and install it when they aren't sharing. Needs `.env.release` (git-ignored) with the S3
