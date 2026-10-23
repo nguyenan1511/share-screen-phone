@@ -7,10 +7,10 @@
   "scripts": {
     "start": "node server.js",
     "build:native": "mkdir -p native/.build && swiftc -O -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display",
-    "build:helper-universal": "mkdir -p native/.build && swiftc -O -target arm64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-arm64 && swiftc -O -target x86_64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-x64 && lipo -create native/.build/phone-display-arm64 native/.build/phone-display-x64 -output native/.build/phone-display-universal",
     "app": "electron desktop/main.js",
-    "dist:mac": "npm run build:helper-universal && electron-builder --mac --universal",
-    "release:mac": "node scripts/release-mac.mjs"
+    "dist:mac": "npm run build:helpers && electron-builder --mac --arm64 --x64",
+    "release:mac": "node scripts/release-mac.mjs",
+    "build:helpers": "mkdir -p native/.build && swiftc -O -target arm64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-arm64 && swiftc -O -target x86_64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-x64"
   },
   "engines": {
     "node": ">=18"
@@ -35,7 +35,7 @@
     ],
     "extraResources": [
       {
-        "from": "native/.build/phone-display-universal",
+        "from": "native/.build/phone-display-${arch}",
         "to": "phone-display"
       }
     ],
@@ -48,13 +48,8 @@
         {
           "target": "dmg",
           "arch": [
-            "universal"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "universal"
+            "arm64",
+            "x64"
           ]
         }
       ],
@@ -63,19 +58,14 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "minimumSystemVersion": "13.0",
-      "x64ArchFiles": "Contents/Resources/phone-display",
       "icon": "assets/icon.png",
-      "artifactName": "Tether-${version}-universal.${ext}"
+      "artifactName": "Tether-${version}-${arch}.${ext}"
     },
     "dmg": {
-      "artifactName": "Tether.dmg",
+      "artifactName": "Tether-${arch}.dmg",
       "title": "Tether"
     },
-    "afterPack": "scripts/after-pack.cjs",
-    "publish": {
-      "provider": "generic",
-      "url": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac"
-    }
+    "afterPack": "scripts/after-pack.cjs"
   },
   "author": "nguyenan1511",
   "tether": {

@@ -1,8 +1,8 @@
 // Tether's own updater. The standard Electron updater (Squirrel.Mac / electron-updater) only works for apps
 // signed with an Apple Developer ID; Tether is ad-hoc signed for now, so this does the same job by hand:
 // check the feed on S3, download the new version in the background, verify it, and swap the app in place as
-// soon as Tether is idle (never while sharing), then reopen it. Once Tether has a Developer ID, replace this
-// with electron-updater (the release script already publishes latest-mac.yml for it).
+// soon as Tether is idle (never while sharing), then reopen it. It downloads the build for this Mac's chip as an
+// xz tarball, about a third of a universal zip, which electron-updater can't do.
 import { app, Notification, shell } from 'electron';
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -129,6 +129,10 @@ export async function cleanUpOldVersions() {
   if (previous !== current) await writeFile(marker, current).catch(() => {});
 }
 
+// The download for this Mac: the Apple silicon or Intel build (half the size of a universal one, xz-compressed).
+// Feeds from before 0.1.9 only have `zip` (universal).
+const packageFor = (feed) => feed.updates?.[process.arch] || feed.zip;
+
 /**
  * @param {{ feedUrl: string, downloadUrl: string, isBusy: () => Promise<boolean>, onStatus: (s: object) => void }} opts
  */
@@ -175,11 +179,15 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
     await rm(dir, { recursive: true, force: true });
     await mkdir(dir, { recursive: true });
     try {
-      const zip = path.join(dir, 'update.zip');
+      const pack = packageFor(feed);
+      const file = path.join(dir, pack.format === 'tar.xz' ? 'update.tar.xz' : 'update.zip');
       setStatus({ state: 'downloading', available: feed.version });
-      await download(feed.zip.url, zip, feed.zip);
+      await download(pack.url, file, pack);
       const unpacked = path.join(dir, 'unpacked');
-      await run('/usr/bin/ditto', ['-x', '-k', zip, unpacked]); // keeps bundle metadata and signatures intact
+      await mkdir(unpacked);
+      // Both keep symlinks, bundle metadata and signatures intact.
+      if (pack.format === 'tar.xz') await run('/usr/bin/tar', ['-xJf', file, '-C', unpacked]);
+      else await run('/usr/bin/ditto', ['-x', '-k', file, unpacked]);
       const newApp = path.join(unpacked, 'Tether.app');
       await stat(newApp);
       await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', newApp]);
@@ -189,7 +197,7 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
       const version = await run('/usr/bin/plutil', ['-extract', 'CFBundleShortVersionString', 'raw', '-o', '-',
         path.join(newApp, 'Contents', 'Info.plist')]);
       if (version !== feed.version) throw new Error(`bundle is ${version}, feed said ${feed.version}`);
-      await rm(zip, { force: true });
+      await rm(file, { force: true });
       return { version, newApp };
     } catch (err) {
       await rm(dir, { recursive: true, force: true });
@@ -229,7 +237,8 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
     try {
       setStatus({ state: 'checking' });
       const feed = await getJson(feedUrl);
-      if (!feed?.version || !feed.zip?.url || !feed.zip?.sha256) throw new Error('feed is incomplete');
+      const pack = feed?.version && packageFor(feed);
+      if (!pack?.url || !pack.sha256) throw new Error('feed is incomplete');
       if (!isNewer(feed.version, current)) return setStatus({ state: 'up-to-date' });
       const blocked = await canSelfUpdate();
       if (blocked) {
@@ -237,7 +246,7 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
         if (!toldManual) {
           toldManual = true;
           notify(`Tether ${feed.version} is available`, `To update automatically, ${blocked}. Click to download it.`,
-            () => shell.openExternal(feed.dmg?.url || downloadUrl));
+            () => shell.openExternal((process.arch === 'x64' && feed.dmg?.intel) || feed.dmg?.url || downloadUrl));
         }
         return;
       }

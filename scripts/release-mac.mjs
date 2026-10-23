@@ -1,9 +1,13 @@
 // Publish a Tether release to S3:  npm run release:mac   (or: npm run release:mac -- --dry-run)
 //
 // 1. refuses with uncommitted changes, or when this version is already on S3
-// 2. builds (npm run dist:mac → dist/Tether.dmg + dist/Tether-<version>-universal.zip)
-// 3. writes latest.json (version, SHA-256 and size of the zip) — what the app's updater reads
-// 4. uploads versioned files first, then the "always newest" Tether.dmg, latest-mac.yml, and latest.json LAST,
+// 2. builds one app per chip (npm run dist:mac → dist/mac-arm64, dist/mac): half the size of a universal app.
+//    Updates ship as xz-compressed tarballs (about a third of the old universal zip); the dmgs are LZMA.
+//    Website installers: mac/Tether.dmg (Apple silicon) and mac/Tether-Intel.dmg.
+// 3. writes latest.json — what the app's updater reads: `updates.arm64` / `updates.x64` (url, SHA-256, size),
+//    plus `zip`, a universal zip merged from the two apps for installed versions 0.1.8 and older, which only know
+//    that field (drop it once nobody runs those)
+// 4. uploads versioned files first, then the "always newest" dmgs, and latest.json LAST,
 //    so users never see a version whose files aren't up yet
 // 5. reads latest.json back from the public URL to confirm
 // 6. deletes the previous version's files (mac/<old>/…), so S3 only keeps the newest release
@@ -21,7 +25,9 @@
 import { DeleteObjectsCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -56,7 +62,8 @@ async function removeVersions(versions) {
   const old = versions.filter((v) => /^\d+\.\d+\.\d+$/.test(v) && v !== version);
   if (!old.length) return;
   const s3 = new S3Client({ region });
-  const Objects = old.flatMap((v) => [{ Key: `mac/${v}/Tether-${v}-universal.zip` }, { Key: `mac/${v}/Tether.dmg` }]);
+  const Objects = old.flatMap((v) => [`Tether-${v}-universal.zip`, `Tether-${v}-arm64.tar.xz`, `Tether-${v}-x64.tar.xz`,
+    'Tether.dmg', 'Tether-Intel.dmg'].map((name) => ({ Key: `mac/${v}/${name}` })));
   const res = await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects, Quiet: true } }));
   if (res.Errors?.length) fail(`could not delete ${res.Errors.map((e) => `${e.Key} (${e.Code})`).join(', ')}`);
   for (const v of old) {
@@ -105,40 +112,107 @@ const built = spawnSync('npm', ['run', '-s', 'dist:mac', ...signArgs], {
 });
 if (built.status !== 0) fail('build failed');
 const dist = path.join(root, 'dist');
-const zipName = `Tether-${version}-universal.zip`;
-const zipPath = path.join(dist, zipName);
-const dmgPath = path.join(dist, 'Tether.dmg');
-for (const f of [zipPath, dmgPath]) if (!existsSync(f)) fail(`missing ${path.relative(root, f)}`);
+const run = (cmd, args, what) => {
+  if (spawnSync(cmd, args, { stdio: 'inherit' }).status !== 0) fail(`${what} failed`);
+};
+// electron-builder puts the Intel app in dist/mac, the Apple silicon one in dist/mac-arm64.
+const ARCHES = {
+  arm64: { app: path.join(dist, 'mac-arm64', 'Tether.app'), dmg: path.join(dist, 'Tether-arm64.dmg'), site: 'Tether.dmg' },
+  x64: { app: path.join(dist, 'mac', 'Tether.app'), dmg: path.join(dist, 'Tether-x64.dmg'), site: 'Tether-Intel.dmg' },
+};
+for (const a of Object.values(ARCHES)) for (const f of [a.app, a.dmg]) if (!existsSync(f)) fail(`missing ${path.relative(root, f)}`);
 
-// Signed builds: the app inside is already notarized + stapled by electron-builder; sign, notarize and staple the
-// dmg too, then let Gatekeeper judge both the way a user's Mac will.
+// LZMA dmgs (ULMO, macOS 10.15+): about 20% smaller than electron-builder's zlib ones, which it can't make itself.
+for (const a of Object.values(ARCHES)) {
+  const lzma = a.dmg.replace(/\.dmg$/, '-lzma.dmg');
+  rmSync(lzma, { force: true });
+  run('/usr/bin/hdiutil', ['convert', a.dmg, '-format', 'ULMO', '-quiet', '-o', lzma], 'compressing the dmg');
+  rmSync(a.dmg);
+  run('/bin/mv', [lzma, a.dmg], 'compressing the dmg');
+}
+
+// Signed builds: the apps inside are already notarized + stapled by electron-builder; sign, notarize and staple
+// the dmgs too, then let Gatekeeper judge them the way a user's Mac will.
 if (identity) {
-  const step = (cmd, args, what) => {
-    console.log(`  • ${what}`);
-    if (spawnSync(cmd, args, { stdio: 'inherit' }).status !== 0) fail(`${what} failed`);
-  };
-  step('codesign', ['--force', '--sign', `Developer ID Application: ${identity}`, '--timestamp', dmgPath], 'signing the dmg');
-  step('xcrun', ['notarytool', 'submit', dmgPath, '--keychain-profile', notaryProfile, '--wait'], 'notarizing the dmg (a few minutes)');
-  step('xcrun', ['stapler', 'staple', dmgPath], 'stapling the dmg');
-  step('spctl', ['--assess', '--type', 'execute', '-v', path.join(dist, 'mac-universal', 'Tether.app')], 'Gatekeeper check: app');
-  step('spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '-v', dmgPath], 'Gatekeeper check: dmg');
+  for (const a of Object.values(ARCHES)) {
+    console.log(`  • ${path.basename(a.dmg)}: signing, notarizing (a few minutes), stapling, Gatekeeper check`);
+    run('codesign', ['--force', '--sign', `Developer ID Application: ${identity}`, '--timestamp', a.dmg], 'signing the dmg');
+    run('xcrun', ['notarytool', 'submit', a.dmg, '--keychain-profile', notaryProfile, '--wait'], 'notarizing the dmg');
+    run('xcrun', ['stapler', 'staple', a.dmg], 'stapling the dmg');
+    run('spctl', ['--assess', '--type', 'execute', '-v', a.app], 'Gatekeeper check: app');
+    run('spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '-v', a.dmg], 'Gatekeeper check: dmg');
+  }
+}
+
+// Update packages: tar.xz of each app (no AppleDouble files, so the signature stays valid), checked by unpacking
+// it the way the updater does and verifying the signature.
+const fileInfo = (file, name) => ({ url: `${base}/${version}/${name}`, sha256: createHash('sha256').update(readFileSync(file)).digest('hex'), size: statSync(file).size });
+const updates = {};
+const uploads = []; // [file, name]
+for (const [arch, a] of Object.entries(ARCHES)) {
+  const name = `Tether-${version}-${arch}.tar.xz`;
+  const file = path.join(dist, name);
+  console.log(`  • packing ${name}…`);
+  run('/usr/bin/tar', ['--no-mac-metadata', '--options', 'xz:compression-level=9', '-cJf', file, '-C', path.dirname(a.app), 'Tether.app'], 'packing');
+  const check = mkdtempSync(path.join(os.tmpdir(), 'tether-check-'));
+  run('/usr/bin/tar', ['-xJf', file, '-C', check], 'unpacking check');
+  run('/usr/bin/codesign', ['--verify', '--deep', '--strict', path.join(check, 'Tether.app')], 'signature check after unpacking');
+  rmSync(check, { recursive: true, force: true });
+  updates[arch] = { format: 'tar.xz', ...fileInfo(file, name) };
+  uploads.push([file, name]);
+}
+
+// For installed 0.1.8 and older (they read only `zip` and can't tell the chip): one universal app, merged from the
+// two builds (no rebuild), ad-hoc or Developer ID signed like them.
+const legacyName = `Tether-${version}-universal.zip`;
+const legacyZip = path.join(dist, legacyName);
+{
+  console.log(`  • merging ${legacyName} for older versions…`);
+  const { makeUniversalApp } = createRequire(import.meta.url)('@electron/universal');
+  const merged = path.join(dist, 'mac-universal', 'Tether.app');
+  rmSync(path.dirname(merged), { recursive: true, force: true });
+  mkdirSync(path.dirname(merged), { recursive: true });
+  // The merge wants identical non-binary files, so it gets unsigned copies; the result is signed below.
+  const work = mkdtempSync(path.join(os.tmpdir(), 'tether-universal-'));
+  const unsigned = {};
+  for (const [arch, a] of Object.entries(ARCHES)) {
+    unsigned[arch] = path.join(work, arch, 'Tether.app');
+    mkdirSync(path.dirname(unsigned[arch]));
+    run('/usr/bin/ditto', [a.app, unsigned[arch]], 'copying the app');
+    run('/usr/bin/find', [unsigned[arch], '-name', '_CodeSignature', '-type', 'd', '-prune', '-exec', 'rm', '-rf', '{}', '+'], 'unsigning the copy');
+  }
+  await makeUniversalApp({ x64AppPath: unsigned.x64, arm64AppPath: unsigned.arm64, outAppPath: merged, force: true,
+    x64ArchFiles: 'Contents/Resources/phone-display' });
+  rmSync(work, { recursive: true, force: true });
+  const signWith = identity
+    ? ['--force', '--deep', '--options', 'runtime', '--timestamp', '--entitlements', path.join(root, 'assets/entitlements.mac.plist'),
+       '--sign', `Developer ID Application: ${identity}`, merged]
+    : ['--force', '--deep', '--sign', '-', merged];
+  run('/usr/bin/codesign', signWith, 'signing the universal app');
+  run('/usr/bin/codesign', ['--verify', '--deep', '--strict', merged], 'verifying the universal app');
+  rmSync(legacyZip, { force: true });
+  run('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', merged, legacyZip], 'zipping the universal app');
+  uploads.push([legacyZip, legacyName]);
 }
 
 // 3. latest.json
-const sha256 = createHash('sha256').update(readFileSync(zipPath)).digest('hex');
 const latest = {
   version,
   releasedAt: new Date().toISOString(),
   notes: process.env.TETHER_RELEASE_NOTES || '',
-  zip: { url: `${base}/${version}/${zipName}`, sha256, size: statSync(zipPath).size },
-  dmg: { url: `${base}/Tether.dmg` },
+  updates,
+  zip: fileInfo(legacyZip, legacyName),
+  dmg: { url: `${base}/Tether.dmg`, intel: `${base}/Tether-Intel.dmg` },
 };
+const mb = (n) => `${(n / 1e6).toFixed(0)} MB`;
+console.log(`\nSizes: update ${mb(updates.arm64.size)} (Apple silicon) / ${mb(updates.x64.size)} (Intel), ` +
+  `installer ${mb(statSync(ARCHES.arm64.dmg).size)} / ${mb(statSync(ARCHES.x64.dmg).size)}`);
 
 if (dryRun) {
   const out = path.join(dist, 'release', 'mac');
   mkdirSync(path.join(out, version), { recursive: true });
-  copyFileSync(zipPath, path.join(out, version, zipName));
-  copyFileSync(dmgPath, path.join(out, 'Tether.dmg'));
+  for (const [file, name] of uploads) copyFileSync(file, path.join(out, version, name));
+  for (const a of Object.values(ARCHES)) copyFileSync(a.dmg, path.join(out, a.site));
   writeFileSync(path.join(out, 'latest.json'), JSON.stringify(latest, null, 2));
   console.log(`\nDry run: ${path.relative(root, out)}/ has latest.json and the files (feed base ${base}).`);
   process.exit(0);
@@ -156,17 +230,15 @@ async function put(key, file, contentType, cacheControl) {
   console.log('done');
 }
 console.log(`\nUploading to s3://${bucket}/mac/ …`);
-await put(`mac/${version}/${zipName}`, zipPath, 'application/zip', IMMUTABLE);
-await put(`mac/${version}/Tether.dmg`, dmgPath, 'application/x-apple-diskimage', IMMUTABLE);
-await put('mac/Tether.dmg', dmgPath, 'application/x-apple-diskimage', FRESH);
-const yml = path.join(dist, 'latest-mac.yml');
-if (existsSync(yml)) await put('mac/latest-mac.yml', yml, 'text/yaml', FRESH); // for electron-updater later
+for (const [file, name] of uploads) await put(`mac/${version}/${name}`, file, name.endsWith('.zip') ? 'application/zip' : 'application/x-xz', IMMUTABLE);
+for (const a of Object.values(ARCHES)) await put(`mac/${version}/${a.site}`, a.dmg, 'application/x-apple-diskimage', IMMUTABLE);
+for (const a of Object.values(ARCHES)) await put(`mac/${a.site}`, a.dmg, 'application/x-apple-diskimage', FRESH);
 await put('mac/latest.json', JSON.stringify(latest, null, 2), 'application/json', FRESH);
 
 // 5. confirm from the public URL
 const check = await fetch(`${base}/latest.json`, { headers: { 'Cache-Control': 'no-cache' } }).then((r) => r.json()).catch(() => null);
 if (check?.version !== version) fail(`public latest.json says ${check?.version ?? 'nothing'}, expected ${version}`);
-console.log(`\n✓ Tether ${version} is live.\n  Download: ${base}/Tether.dmg\n  Feed:     ${base}/latest.json`);
+console.log(`\n✓ Tether ${version} is live.\n  Download: ${base}/Tether.dmg (Apple silicon), ${base}/Tether-Intel.dmg\n  Feed:     ${base}/latest.json`);
 
 // 6. the old version is no longer offered anywhere: delete its files
 if (previous && previous !== version) {
