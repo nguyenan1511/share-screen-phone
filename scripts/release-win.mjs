@@ -4,7 +4,7 @@
 // "More info → Run anyway"). Same steps as release-mac.mjs:
 // 1. refuses with uncommitted changes, or when this version is already on S3
 // 2. builds dist/Tether-Setup-<version>.exe
-// 3. uploads it versioned, then the "always newest" Tether-Setup.exe, then latest.json LAST
+// 3. uploads it to windows/<version>/, then latest.json LAST (the website's /download/windows reads it)
 // 4. reads latest.json back from the public URL, then deletes the previous version's installer
 //
 // Files live in windows/ (Mac in mac/). The installed app reads windows/latest.json (desktop/updater.js: `setup`).
@@ -73,7 +73,6 @@ const latest = {
   releasedAt: new Date().toISOString(),
   notes: process.env.TETHER_RELEASE_NOTES || '',
   setup: { url: `${base}/${version}/${setupName}`, sha256: createHash('sha256').update(readFileSync(setup)).digest('hex'), size: statSync(setup).size },
-  download: `${base}/Tether-Setup.exe`,
 };
 console.log(`\nInstaller: ${(latest.setup.size / 1e6).toFixed(0)} MB`);
 
@@ -81,7 +80,6 @@ if (dryRun) {
   const out = path.join(root, 'dist', 'release', PREFIX);
   mkdirSync(path.join(out, version), { recursive: true });
   copyFileSync(setup, path.join(out, version, setupName));
-  copyFileSync(setup, path.join(out, 'Tether-Setup.exe'));
   writeFileSync(path.join(out, 'latest.json'), JSON.stringify(latest, null, 2));
   console.log(`\nDry run: ${path.relative(root, out)}/ has latest.json and the installer (feed base ${base}).`);
   process.exit(0);
@@ -101,14 +99,13 @@ async function put(key, file, contentType, cacheControl) {
 console.log(`\nUploading to s3://${bucket}/${PREFIX}/ …`);
 const EXE = 'application/vnd.microsoft.portable-executable';
 await put(`${PREFIX}/${version}/${setupName}`, setup, EXE, 'public, max-age=31536000, immutable');
-await put(`${PREFIX}/Tether-Setup.exe`, setup, EXE, 'no-cache');
 await put(`${PREFIX}/latest.json`, JSON.stringify(latest, null, 2), 'application/json', 'no-cache');
 await put(`${LEGACY_PREFIX}/latest.json`, JSON.stringify(latest, null, 2), 'application/json', 'no-cache');
 
 // 4. confirm, then remove the previous version
 const check = await fetch(`${base}/latest.json`, { headers: { 'Cache-Control': 'no-cache' } }).then((r) => r.json()).catch(() => null);
 if (check?.version !== version) fail(`public latest.json says ${check?.version ?? 'nothing'}, expected ${version}`);
-console.log(`\n✓ Tether ${version} for Windows is live.\n  Download: ${latest.download}\n  Feed:     ${base}/latest.json`);
+console.log(`\n✓ Tether ${version} for Windows is live.\n  Download: ${latest.setup.url}\n  Feed:     ${base}/latest.json`);
 
 // Old installers: the previous version here, and anything left in the old mac/windows/ folder (only its
 // latest.json stays). Deleting a file that's already gone is fine.
@@ -116,6 +113,7 @@ const old = [...new Set([previous, legacyPrevious].filter((v) => v && v !== vers
 const Objects = [
   ...old.flatMap((v) => [`${PREFIX}/${v}/Tether-Setup-${v}.exe`, `${LEGACY_PREFIX}/${v}/Tether-Setup-${v}.exe`]),
   `${LEGACY_PREFIX}/Tether-Setup.exe`,
+  `${PREFIX}/Tether-Setup.exe`, // the old "always newest" copy (now /download/windows on the website)
 ].map((Key) => ({ Key }));
 console.log(`\nRemoving older Windows files from S3 (${old.join(', ') || 'none'})…`);
 const res = await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects, Quiet: true } }));

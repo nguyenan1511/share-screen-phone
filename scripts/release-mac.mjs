@@ -3,12 +3,13 @@
 // 1. refuses with uncommitted changes, or when this version is already on S3
 // 2. builds one app per chip (npm run dist:mac → dist/mac-arm64, dist/mac): half the size of a universal app.
 //    Updates ship as xz-compressed tarballs (about a third of the old universal zip); the dmgs are LZMA.
-//    Website installers: mac/Tether.dmg (Apple silicon) and mac/Tether-Intel.dmg.
+//    Installers: mac/<version>/Tether.dmg (Apple silicon) and Tether-Intel.dmg; the website's /download/mac and
+//    /download/mac-intel (server.js) send people to the current ones via latest.json.
 // 3. writes latest.json — what the app's updater reads: `updates.arm64` / `updates.x64` (url, SHA-256, size),
 //    plus `zip`, a universal zip merged from the two apps for installed versions 0.1.8 and older, which only know
 //    that field (drop it once nobody runs those)
-// 4. uploads versioned files first, then the "always newest" dmgs, and latest.json LAST,
-//    so users never see a version whose files aren't up yet
+// 4. uploads the version folder first and latest.json LAST, so users never see a version whose files aren't up yet.
+//    Nothing else lives outside mac/<version>/.
 // 5. reads latest.json back from the public URL to confirm
 // 6. deletes the previous version's files (mac/<old>/…), so S3 only keeps the newest release
 //
@@ -126,8 +127,8 @@ const run = (cmd, args, what) => {
 };
 // electron-builder puts the Intel app in dist/mac, the Apple silicon one in dist/mac-arm64.
 const ARCHES = {
-  arm64: { app: path.join(dist, 'mac-arm64', 'Tether.app'), dmg: path.join(dist, 'Tether-arm64.dmg'), site: 'Tether.dmg' },
-  x64: { app: path.join(dist, 'mac', 'Tether.app'), dmg: path.join(dist, 'Tether-x64.dmg'), site: 'Tether-Intel.dmg' },
+  arm64: { app: path.join(dist, 'mac-arm64', 'Tether.app'), dmg: path.join(dist, 'Tether-arm64.dmg'), name: 'Tether.dmg' },
+  x64: { app: path.join(dist, 'mac', 'Tether.app'), dmg: path.join(dist, 'Tether-x64.dmg'), name: 'Tether-Intel.dmg' },
 };
 for (const a of Object.values(ARCHES)) for (const f of [a.app, a.dmg]) if (!existsSync(f)) fail(`missing ${path.relative(root, f)}`);
 
@@ -211,7 +212,7 @@ const latest = {
   notes: process.env.TETHER_RELEASE_NOTES || '',
   updates,
   zip: fileInfo(legacyZip, legacyName),
-  dmg: { url: `${base}/Tether.dmg`, intel: `${base}/Tether-Intel.dmg` },
+  dmg: { url: `${base}/${version}/Tether.dmg`, intel: `${base}/${version}/Tether-Intel.dmg` },
 };
 const mb = (n) => `${(n / 1e6).toFixed(0)} MB`;
 console.log(`\nSizes: update ${mb(updates.arm64.size)} (Apple silicon) / ${mb(updates.x64.size)} (Intel), ` +
@@ -221,7 +222,7 @@ if (dryRun) {
   const out = path.join(dist, 'release', 'mac');
   mkdirSync(path.join(out, version), { recursive: true });
   for (const [file, name] of uploads) copyFileSync(file, path.join(out, version, name));
-  for (const a of Object.values(ARCHES)) copyFileSync(a.dmg, path.join(out, a.site));
+  for (const a of Object.values(ARCHES)) copyFileSync(a.dmg, path.join(out, version, a.name));
   writeFileSync(path.join(out, 'latest.json'), JSON.stringify(latest, null, 2));
   console.log(`\nDry run: ${path.relative(root, out)}/ has latest.json and the files (feed base ${base}).`);
   process.exit(0);
@@ -240,14 +241,13 @@ async function put(key, file, contentType, cacheControl) {
 }
 console.log(`\nUploading to s3://${bucket}/mac/ …`);
 for (const [file, name] of uploads) await put(`mac/${version}/${name}`, file, name.endsWith('.zip') ? 'application/zip' : 'application/x-xz', IMMUTABLE);
-for (const a of Object.values(ARCHES)) await put(`mac/${version}/${a.site}`, a.dmg, 'application/x-apple-diskimage', IMMUTABLE);
-for (const a of Object.values(ARCHES)) await put(`mac/${a.site}`, a.dmg, 'application/x-apple-diskimage', FRESH);
+for (const a of Object.values(ARCHES)) await put(`mac/${version}/${a.name}`, a.dmg, 'application/x-apple-diskimage', IMMUTABLE);
 await put('mac/latest.json', JSON.stringify(latest, null, 2), 'application/json', FRESH);
 
 // 5. confirm from the public URL
 const check = await fetch(`${base}/latest.json`, { headers: { 'Cache-Control': 'no-cache' } }).then((r) => r.json()).catch(() => null);
 if (check?.version !== version) fail(`public latest.json says ${check?.version ?? 'nothing'}, expected ${version}`);
-console.log(`\n✓ Tether ${version} is live.\n  Download: ${base}/Tether.dmg (Apple silicon), ${base}/Tether-Intel.dmg\n  Feed:     ${base}/latest.json`);
+console.log(`\n✓ Tether ${version} is live.\n  Download: ${latest.dmg.url} (Apple silicon), ${latest.dmg.intel}\n  Feed:     ${base}/latest.json`);
 
 // 6. the old version is no longer offered anywhere: delete its files
 if (previous && previous !== version) {

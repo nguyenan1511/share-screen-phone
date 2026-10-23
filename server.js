@@ -584,6 +584,31 @@ async function serveStatic(res, pathname) {
   }
 }
 
+// ---- Download links (/download/mac, /download/mac-intel, /download/windows) ----
+// S3 keeps each release only in its version folder (mac/<version>/, windows/<version>/), so the website links
+// here: read the current latest.json and send the browser to that version's installer.
+const RELEASES = 'https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com';
+const DOWNLOADS = {
+  mac: { feed: `${RELEASES}/mac/latest.json`, pick: (f) => f.dmg?.url },
+  'mac-intel': { feed: `${RELEASES}/mac/latest.json`, pick: (f) => f.dmg?.intel },
+  windows: { feed: `${RELEASES}/windows/latest.json`, pick: (f) => f.setup?.url },
+};
+const feedCache = new Map(); // feed URL → { at, json }
+
+async function handleDownload(res, name) {
+  const target = DOWNLOADS[name];
+  if (!target) return json(res, 404, { error: 'not found' });
+  let cached = feedCache.get(target.feed);
+  if (!cached || Date.now() - cached.at > 60_000) {
+    const feed = await fetch(target.feed, { headers: { 'Cache-Control': 'no-cache' } }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (feed) feedCache.set(target.feed, (cached = { at: Date.now(), json: feed }));
+  }
+  const location = cached && target.pick(cached.json);
+  if (!location) return json(res, 503, { error: 'download not available right now, try again in a minute' });
+  res.writeHead(302, { Location: location, 'Cache-Control': 'no-store' });
+  res.end();
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const room = url.searchParams.get('room');
@@ -647,6 +672,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/cursor') return openCursorStream(req, res);
     if (req.method === 'GET' && url.pathname === '/api/cursor-live') return openPhoneCursorStream(req, res);
     if (req.method === 'POST' && url.pathname === '/api/input') return await handleInput(req, res);
+    if (req.method === 'GET' && url.pathname.startsWith('/download/')) return await handleDownload(res, url.pathname.slice(10));
     if (req.method === 'GET') return await serveStatic(res, url.pathname);
     json(res, 405, { error: 'method not allowed' });
   } catch (err) {

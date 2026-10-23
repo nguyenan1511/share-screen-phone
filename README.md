@@ -5,7 +5,7 @@ look at the phone.
 
 - **Website:** https://share-screen-phone.vercel.app — share any screen, window or tab to an
   iPhone from Chrome (rooms in Upstash Redis on Vercel).
-- **Mac app:** https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/Tether.dmg —
+- **Mac app:** https://share-screen-phone.vercel.app/download/mac —
   adds a real iPhone screen (a virtual monitor only the phone shows), an instant cursor,
   ⌘P / ⌘O shortcuts, and updates itself. Install guide: `/install` on the website.
 

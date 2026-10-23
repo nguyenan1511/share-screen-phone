@@ -97,8 +97,8 @@
   "author": "nguyenan1511",
   "tether": {
     "updateFeed": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/latest.json",
-    "downloadUrl": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/Tether.dmg",
+    "downloadUrl": "https://share-screen-phone.vercel.app/download/mac",
     "updateFeedWindows": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/windows/latest.json",
-    "downloadUrlWindows": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/windows/Tether-Setup.exe"
+    "downloadUrlWindows": "https://share-screen-phone.vercel.app/download/windows"
   }
 }

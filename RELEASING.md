@@ -2,7 +2,9 @@
 
 Releases go to Amazon S3 (`tether-releases-eland`, Singapore). Installed apps check
 `mac/latest.json` and update themselves (see `desktop/updater.js`); the website's
-**Download for Mac** button serves `mac/Tether.dmg` (Apple silicon) or `mac/Tether-Intel.dmg`.
+**Download** buttons link to `/download/mac`, `/download/mac-intel` and `/download/windows` (server.js), which
+read `latest.json` and redirect to the installer in the current version folder. S3 holds only `mac/<version>/`,
+`windows/<version>/` and the two `latest.json` files.
 
 ## One-time setup
 `.env.release` in the project folder (git-ignored, only you can read it):
@@ -65,7 +67,7 @@ installs it the next time it isn't sharing.
 ## Windows
 `npm run release:win` (same rules: committed, version bumped) builds `Tether-Setup-<version>.exe` on this
 Mac (NSIS, x64; electron-builder brings its own wine for the icon), uploads it to `windows/<version>/`,
-`windows/Tether-Setup.exe` (the website's **Download for Windows**) and `windows/latest.json` last, then
+then `windows/latest.json` last (the website's **Download for Windows** reads it), then
 deletes the previous Windows version. Installed Windows apps read `latest.json` → `setup` and run the new
 installer silently. 0.1.10 (the first Windows version) reads `mac/windows/latest.json`; the script keeps
 that copy current and removes everything else in `mac/windows/`.
