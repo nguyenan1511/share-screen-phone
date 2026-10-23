@@ -427,6 +427,14 @@ async function handleDisplay(req, res, url) {
     broadcastCursor(lastCursorLine);
     return json(res, 200, { ok: true, cursorVisible });
   }
+  if (url.searchParams.get('action') === 'accessibility') {
+    // Re-read (or, with prompt=1, ask macOS for) the helper's Accessibility permission; the helper answers with a
+    // fresh "ready" line, which updates helper.info.
+    if (!helper?.info) return json(res, 409, { error: 'no virtual display' });
+    helperSend({ t: url.searchParams.get('prompt') === '1' ? 'axprompt' : 'status' });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return json(res, 200, { accessibility: Boolean(helper?.info?.accessibility) });
+  }
   if (url.searchParams.get('action') === 'home') {
     helperSend({ t: 'home' });
     return json(res, 200, { ok: true });

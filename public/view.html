@@ -48,6 +48,12 @@
   <div id="status" class="overlay chrome">Connecting…</div>
   <div id="stats" class="stats chrome" hidden></div>
   <div id="touchDot" class="touch-dot"></div>
+  <div id="gestureHelp" class="gesture-help" role="dialog" aria-labelledby="gestureTitle" hidden>
+    <h2 id="gestureTitle">Control the Mac from here.</h2>
+    <dl id="gestureList"></dl>
+    <p>Full screen is view-only on iPhone. For full screen with touch, tap Share, then Add to Home Screen.</p>
+    <button type="button" id="gestureOk">Got it</button>
+  </div>
   <div id="cursor" class="cursor" aria-hidden="true" hidden>
     <svg id="cursorArrow" viewBox="0 0 16 24" width="16" height="24">
       <path d="M1 1 L1 18.5 L5.2 14.6 L8 21.4 L10.9 20.2 L8.1 13.6 L13.8 13.6 Z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>
@@ -77,6 +83,7 @@
     <button type="button" data-key="ArrowDown" aria-label="Arrow down"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
     <button type="button" data-key="ArrowRight" aria-label="Arrow right"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></button>
     <span class="sep" aria-hidden="true"></span>
+    <button type="button" id="helpBtn" aria-label="Touch gestures">?</button>
     <button type="button" id="statsBtn" aria-label="Show stream stats">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19V11M12 19V5M19 19v-5"></path></svg>
     </button>
@@ -435,7 +442,27 @@
       document.body.classList.toggle('controlling', allowed);
       $('toolsToggle').hidden = !allowed;
       $('tools').hidden = !allowed;
+      if (!allowed) $('gestureHelp').hidden = true;
+      else if (!seenGestureHelp()) showGestureHelp();
       updateFsButton();
+    }
+
+    const GESTURES = {
+      direct: [['Tap', 'Click'], ['Double tap', 'Double click'], ['Drag', 'Scroll'], ['Hold', 'Right click'],
+        ['Hold, then drag', 'Select text, move windows'], ['Two fingers', 'Scroll']],
+      trackpad: [['Slide', 'Move the pointer'], ['Tap', 'Click where the pointer is'], ['Hold', 'Right click'],
+        ['Two fingers', 'Scroll']],
+    };
+    const seenGestureHelp = () => { try { return localStorage.getItem('gestureHelpSeen') === '1'; } catch { return false; } };
+    function showGestureHelp() {
+      $('gestureList').replaceChildren(...GESTURES[touchMode].flatMap(([what, does]) => {
+        const dt = document.createElement('dt');
+        const dd = document.createElement('dd');
+        dt.textContent = what;
+        dd.textContent = does;
+        return [dt, dd];
+      }));
+      $('gestureHelp').hidden = false;
     }
 
     function send(event) {
@@ -462,10 +489,15 @@
       return { x: (touch.clientX - r.left) / r.width, y: (touch.clientY - r.top) / r.height };
     }
 
+    // Touch mode works like an iPhone: tap = click, drag = scroll (with momentum), hold = right click,
+    // hold then drag = mouse drag (select text, move windows). Trackpad mode moves the cursor like a laptop trackpad.
+    // Two fingers scroll in both modes.
     const TAP_SLOP = 8;          // px of movement before a touch counts as a drag
-    const LONG_PRESS_MS = 550;   // hold this long without moving = right click
+    const HOLD_MS = 450;         // hold this long without moving = grab (right click if released, drag if moved)
     const TRACKPAD_SPEED = 1.6;  // trackpad mode: cursor moves this many times the finger distance
+    const MOMENTUM_FRICTION = 0.94; // per 16 ms frame
     let gesture = null;
+    let momentum = 0;            // requestAnimationFrame id of a running fling
 
     function midpoint(touches) {
       const [a, b] = touches;
@@ -479,24 +511,73 @@
       dot.style.transform = `translate(${touch.clientX}px, ${touch.clientY}px)`;
       dot.classList.add('on');
     }
-    const hideDot = () => $('touchDot').classList.remove('on');
+    const hideDot = () => $('touchDot').classList.remove('on', 'hold');
+
+    const stopMomentum = () => { cancelAnimationFrame(momentum); momentum = 0; };
+
+    // Scroll by a finger movement in screen px. The first event of a gesture also moves the pointer to where the
+    // finger landed (direct mode), so the window under the finger is the one that scrolls.
+    function scrollBy(g, dxPx, dyPx) {
+      const r = contentRect();
+      const event = { t: 'scroll', dx: dxPx / r.width, dy: dyPx / r.height };
+      if (touchMode === 'direct' && !g.aimed) Object.assign(event, norm(g.start));
+      g.aimed = true;
+      send(event);
+    }
+
+    // Remember recent movement so a flick keeps scrolling after the finger lifts.
+    function track(g, point) {
+      const now = performance.now();
+      g.samples = (g.samples || []).filter((s) => now - s.time < 80);
+      g.samples.push({ time: now, x: point.clientX, y: point.clientY });
+    }
+
+    function fling(g) {
+      const s = g.samples || [];
+      if (s.length < 2) return;
+      const first = s[0], last = s[s.length - 1];
+      const dt = last.time - first.time;
+      if (dt <= 0 || performance.now() - last.time > 60) return; // finger stopped before lifting: no fling
+      let vx = (last.x - first.x) / dt, vy = (last.y - first.y) / dt; // px per ms
+      if (Math.hypot(vx, vy) < 0.25) return;
+      let prev = performance.now();
+      const step = (now) => {
+        const elapsed = Math.min(now - prev, 50);
+        prev = now;
+        const decay = Math.pow(MOMENTUM_FRICTION, elapsed / 16);
+        vx *= decay;
+        vy *= decay;
+        if (Math.hypot(vx, vy) < 0.02) return (momentum = 0);
+        scrollBy(g, vx * elapsed, vy * elapsed);
+        momentum = requestAnimationFrame(step);
+      };
+      momentum = requestAnimationFrame(step);
+    }
 
     function onTouchStart(e) {
       if (!controlAllowed || !hasPicture()) return;
       e.preventDefault();
-      if (e.touches.length === 1) showDot(e.touches[0]);
-      clearTimeout(gesture?.longPress);
+      stopMomentum(); // a touch catches a fling, like on iPhone
+      clearTimeout(gesture?.hold);
       if (e.touches.length >= 2) {
-        gesture = { kind: 'scroll', last: midpoint(e.touches) };
+        if (gesture?.kind === 'drag') send({ t: 'up', ...norm(gesture.last) });
+        hideDot();
+        const m = midpoint(e.touches);
+        gesture = { kind: 'scroll', start: m, last: m, aimed: false };
         return;
       }
       const t = e.touches[0];
-      gesture = { kind: 'pending', start: t, last: t, moved: false, done: false };
-      gesture.longPress = setTimeout(() => {
-        if (gesture?.kind !== 'pending' || gesture.moved) return;
-        gesture.done = true;
-        send(touchMode === 'direct' ? { t: 'rightclick', ...norm(gesture.start) } : { t: 'rightclick' });
-      }, LONG_PRESS_MS);
+      showDot(t);
+      gesture = { kind: 'pending', start: t, last: t };
+      gesture.hold = setTimeout(() => {
+        if (gesture?.kind !== 'pending') return;
+        gesture.kind = 'held';
+        $('touchDot').classList.add('hold');
+        if (touchMode !== 'direct') { // trackpad: hold = right click right away
+          gesture.kind = 'done';
+          send({ t: 'rightclick' });
+        }
+      }, HOLD_MS);
     }
 
     function onTouchMove(e) {
@@ -506,24 +587,30 @@
       if (gesture.kind === 'scroll') {
         if (e.touches.length < 2) return;
         const m = midpoint(e.touches);
-        const dx = (m.clientX - gesture.last.clientX) / r.width;
-        const dy = (m.clientY - gesture.last.clientY) / r.height;
+        scrollBy(gesture, m.clientX - gesture.last.clientX, m.clientY - gesture.last.clientY);
+        track(gesture, m);
         gesture.last = m;
-        send(touchMode === 'direct' ? { t: 'scroll', ...norm(m), dx, dy } : { t: 'scroll', dx, dy });
         return;
       }
       const t = e.touches[0];
       showDot(t);
-      if (!gesture.moved && Math.hypot(t.clientX - gesture.start.clientX, t.clientY - gesture.start.clientY) < TAP_SLOP) return;
-      if (gesture.done) return;
-      if (!gesture.moved) {
-        gesture.moved = true;
-        clearTimeout(gesture.longPress);
-        if (touchMode === 'direct') send({ t: 'down', ...norm(gesture.start) });
+      const far = Math.hypot(t.clientX - gesture.start.clientX, t.clientY - gesture.start.clientY) >= TAP_SLOP;
+      if (gesture.kind === 'pending') {
+        if (!far) return;
+        clearTimeout(gesture.hold);
+        gesture.kind = touchMode === 'direct' ? 'swipe' : 'point';
+      } else if (gesture.kind === 'held') {
+        if (!far) return;
+        gesture.kind = 'drag';
+        send({ t: 'down', ...norm(gesture.start) });
       }
-      if (touchMode === 'direct') {
+      if (gesture.kind === 'swipe') {
+        hideDot();
+        scrollBy(gesture, t.clientX - gesture.last.clientX, t.clientY - gesture.last.clientY);
+        track(gesture, t);
+      } else if (gesture.kind === 'drag') {
         send({ t: 'drag', ...norm(t) });
-      } else {
+      } else if (gesture.kind === 'point') {
         send({
           t: 'move',
           dx: ((t.clientX - gesture.last.clientX) / r.width) * TRACKPAD_SPEED,
@@ -538,15 +625,13 @@
       e.preventDefault();
       if (e.touches.length) return; // wait until every finger is up
       hideDot();
-      clearTimeout(gesture.longPress);
+      clearTimeout(gesture.hold);
       const g = gesture;
       gesture = null;
-      if (g.kind !== 'pending' || g.done) return;
-      if (g.moved) {
-        if (touchMode === 'direct') send({ t: 'up', ...norm(g.last) });
-      } else {
-        send(touchMode === 'direct' ? { t: 'click', ...norm(g.start) } : { t: 'click' });
-      }
+      if (g.kind === 'pending') send(touchMode === 'direct' ? { t: 'click', ...norm(g.start) } : { t: 'click' });
+      else if (g.kind === 'held') send({ t: 'rightclick', ...norm(g.start) });
+      else if (g.kind === 'drag') send({ t: 'up', ...norm(g.last) });
+      else if (g.kind === 'swipe' || g.kind === 'scroll') fling(g);
     }
 
     for (const el of [video, canvas]) {
@@ -588,6 +673,7 @@
       touchMode = b.dataset.touch;
       try { localStorage.setItem('touchMode', touchMode); } catch {}
       showMode();
+      if (!$('gestureHelp').hidden) showGestureHelp();
     }));
     showMode();
     document.querySelectorAll('[data-key]').forEach((b) => (b.onclick = () => send({ t: 'key', k: b.dataset.key })));
@@ -603,6 +689,11 @@
     }, { passive: false });
     $('toolsToggle').onclick = () => ($('tools').hidden = !$('tools').hidden);
     $('statsBtn').onclick = () => ($('stats').hidden = !$('stats').hidden);
+    $('helpBtn').onclick = () => ($('gestureHelp').hidden ? showGestureHelp() : ($('gestureHelp').hidden = true));
+    $('gestureOk').onclick = () => {
+      $('gestureHelp').hidden = true;
+      try { localStorage.setItem('gestureHelpSeen', '1'); } catch {}
+    };
     if (params.has('stats')) $('stats').hidden = false;
 
     // ---- View-only bits ----

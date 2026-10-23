@@ -284,6 +284,8 @@ kbd.recording { border: 2px solid var(--focus); padding: 0 12px; font-size: 14px
 .split > * { flex: 1 1 260px; min-width: 0; }
 .options { display: flex; flex-direction: column; gap: 28px; }
 .option .hint { margin-top: 8px; }
+.touch-row { margin-top: 24px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.touch-row .hint:empty { display: none; }
 
 .connect { display: flex; flex-wrap: wrap; gap: 32px; align-items: center; }
 .qr { width: 168px; height: 168px; flex: none; padding: 14px; background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-md); }
@@ -496,6 +498,40 @@ kbd.recording { border: 2px solid var(--focus); padding: 0 12px; font-size: 14px
   z-index: 2;
 }
 .touch-dot.on { opacity: 1; transition: none; }
+/* Held long enough: release = right click, move = drag. */
+.touch-dot.hold { background: rgba(91, 127, 255, 0.7); box-shadow: 0 0 0 8px rgba(91, 127, 255, 0.25); }
+
+.gesture-help {
+  position: fixed;
+  left: 50%;
+  bottom: calc(max(10px, env(safe-area-inset-bottom)) + 54px);
+  transform: translateX(-50%);
+  width: min(340px, calc(100vw - 32px));
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(28, 28, 30, 0.92);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.35;
+  z-index: 4;
+}
+.gesture-help h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; letter-spacing: -0.2px; }
+.gesture-help dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0 0 12px; }
+.gesture-help dt { font-weight: 600; }
+.gesture-help dd { margin: 0; color: rgba(255, 255, 255, 0.72); }
+.gesture-help p { margin: 0 0 14px; font-size: 12px; color: rgba(255, 255, 255, 0.55); }
+.gesture-help button {
+  height: 32px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--primary-on-dark);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+}
 
 .cursor {
   position: fixed;

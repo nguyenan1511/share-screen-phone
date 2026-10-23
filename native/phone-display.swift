@@ -231,6 +231,11 @@ func handle(_ cmd: [String: Any]) {
     if let text = cmd["s"] as? String { typeText(text, mods: mods) }
   case "status":
     reportReady()
+  case "axprompt":
+    // Shows macOS's "would like to control this computer" prompt with a button to Accessibility settings.
+    let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+    _ = AXIsProcessTrustedWithOptions(options)
+    reportReady()
   case "home":
     bringCursorHome()
   case "hotkey":

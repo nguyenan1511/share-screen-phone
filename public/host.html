@@ -187,6 +187,11 @@
               </select>
             </fieldset>
           </div>
+          <div class="touch-row local-only">
+            <label class="check"><input type="checkbox" id="allowControl"><span>Touch control on the iPhone: tap to click, drag to scroll, hold for right click, type with the iPhone keyboard.</span></label>
+            <p class="hint" id="controlState"></p>
+            <button type="button" class="pill pill-ghost" id="axGrant" hidden>Allow control…</button>
+          </div>
           <div class="card-foot">
             <span></span>
             <div class="row">
@@ -200,8 +205,6 @@
           <details class="disclosure">
             <summary>More options</summary>
             <div class="disclosure-body">
-              <label class="check"><input type="checkbox" id="allowControl"><span>Let the iPhone click and type too (touch, trackpad, keyboard)</span></label>
-              <p class="hint" id="controlState"></p>
               <fieldset id="modes">
                 <legend class="option-label">What the phone shows.</legend>
                 <label class="check"><input type="radio" name="mode" value="full" checked><span>Everything I share</span></label>
@@ -728,14 +731,41 @@
     }
 
     function controlAllowed() {
-      return $('allowControl').checked && sharingVirtualDisplay();
+      return $('allowControl').checked && sharingVirtualDisplay() && Boolean(virtualDisplay.accessibility);
     }
+
+    // Accessibility permission (needed to click and type for the phone): ask macOS, then watch until it's on.
+    let axWatch = 0;
+    async function checkAccessibility(prompt) {
+      if (!virtualDisplay) return;
+      try {
+        const { accessibility } = await api(`/api/display?action=accessibility${prompt ? '&prompt=1' : ''}`, { method: 'POST' });
+        if (virtualDisplay && accessibility !== virtualDisplay.accessibility) {
+          virtualDisplay.accessibility = accessibility;
+          sendControlState();
+        }
+      } catch {}
+    }
+    $('axGrant').onclick = () => {
+      checkAccessibility(true);
+      clearInterval(axWatch);
+      let tries = 0;
+      axWatch = setInterval(() => {
+        if (virtualDisplay?.accessibility || ++tries > 90) return clearInterval(axWatch);
+        checkAccessibility(false);
+      }, 2000);
+    };
+    window.addEventListener('focus', () => {
+      if ($('allowControl').checked && virtualDisplay && !virtualDisplay.accessibility) checkAccessibility(false);
+    });
 
     function sendControlState() {
       const allowed = controlAllowed();
       let why = '';
-      if (!$('allowControl').checked) why = 'Control is off.';
-      else if (!virtualDisplay) why = 'Create the iPhone screen first.';
+      $('axGrant').hidden = !($('allowControl').checked && virtualDisplay && !virtualDisplay.accessibility);
+      if (!$('allowControl').checked) why = 'Off: the phone only shows the screen.';
+      else if (!virtualDisplay) why = 'Works on the iPhone screen: add it above first.';
+      else if (!virtualDisplay.accessibility) why = `macOS needs to allow ${inDesktopApp ? 'Tether' : 'Terminal'} to control the Mac: click Allow control, turn it on in Accessibility, then come back here.`;
       else if (!displayTrack) why = 'Share screen and pick the iPhone screen in Chrome\'s picker.';
       else if (!sharingVirtualDisplay()) why = 'You are sharing a different screen. Stop, Share screen, then pick the “Entire screen” that matches the iPhone screen.';
       $('controlState').textContent = allowed ? 'iPhone can control the iPhone screen.' : why;
@@ -795,11 +825,9 @@
       for (const id of ['phoneModel', 'textSize', 'orientation', 'vdPos', 'customW', 'customH']) $(id).disabled = Boolean(virtualDisplay);
       showSizePreview();
       if (virtualDisplay) {
-        const { bounds, accessibility } = virtualDisplay;
+        const { bounds } = virtualDisplay;
         const side = { right: 'right of', left: 'left of', above: 'above' }[virtualDisplay.position] ?? 'next to';
-        $('vdState').textContent =
-          `On, ${bounds.width} × ${bounds.height}, ${side} the laptop.` +
-          (accessibility ? '' : ' Touch control from the iPhone also needs Terminal allowed in System Settings → Privacy & Security → Accessibility.');
+        $('vdState').textContent = `On, ${bounds.width} × ${bounds.height}, ${side} the laptop.`;
         $('edgeName').textContent = { right: 'right', left: 'left', above: 'top' }[virtualDisplay.position] ?? 'right';
       } else {
         $('vdState').textContent = 'Not added yet.';
@@ -906,7 +934,11 @@
     };
     $('vdStart').onclick = startDisplay;
     $('vdStop').onclick = stopDisplay;
-    $('allowControl').onchange = sendControlState;
+    $('allowControl').checked = prefs.get('allowControl') === '1';
+    $('allowControl').onchange = () => {
+      prefs.set('allowControl', $('allowControl').checked ? '1' : '0');
+      sendControlState();
+    };
     initDisplay();
     window.addEventListener('beforeunload', () => zoneWin?.close());
 
