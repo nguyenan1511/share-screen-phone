@@ -12,7 +12,8 @@
     "release:mac": "node scripts/release-mac.mjs",
     "build:helpers": "mkdir -p native/.build && swiftc -O -target arm64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-arm64 && swiftc -O -target x86_64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-x64",
     "dist:win": "electron-builder --win nsis --x64",
-    "release:win": "node scripts/release-win.mjs"
+    "release:win": "node scripts/release-win.mjs",
+    "release": "node scripts/release-mac.mjs && node scripts/release-win.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -97,7 +98,7 @@
   "tether": {
     "updateFeed": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/latest.json",
     "downloadUrl": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/Tether.dmg",
-    "updateFeedWindows": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/windows/latest.json",
-    "downloadUrlWindows": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/windows/Tether-Setup.exe"
+    "updateFeedWindows": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/windows/latest.json",
+    "downloadUrlWindows": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/windows/Tether-Setup.exe"
   }
 }

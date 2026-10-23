@@ -64,13 +64,23 @@ async function getJson(url) {
 }
 
 // Stream to disk while hashing; reject unless size and SHA-256 match what the feed promised.
-async function download(url, dest, { size, sha256 }) {
+// onProgress(0..1) at most ~6 times a second.
+async function download(url, dest, { size, sha256 }, onProgress = () => {}) {
   const res = await get(url);
   const hash = createHash('sha256');
+  const total = size || Number(res.headers['content-length']) || 0;
   let bytes = 0;
+  let reported = 0;
   await new Promise((resolve, reject) => {
     const out = createWriteStream(dest);
-    res.on('data', (chunk) => { hash.update(chunk); bytes += chunk.length; });
+    res.on('data', (chunk) => {
+      hash.update(chunk);
+      bytes += chunk.length;
+      if (total && Date.now() - reported > 150) {
+        reported = Date.now();
+        onProgress(Math.min(bytes / total, 1));
+      }
+    });
     res.on('error', reject);
     out.on('error', reject);
     out.on('finish', resolve);
@@ -149,7 +159,8 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
   // .../Tether.app/Contents/MacOS/Tether → .../Tether.app
   const appPath = path.resolve(process.execPath, '..', '..', '..');
   let status = { state: 'idle', current };
-  let ready = null; // { version, newApp }
+  let ready = null; // { version, newApp } or { version, installer }: downloaded and checked
+  let pending = null; // a newer feed, waiting until Tether is idle to update
   let working = false;
   let installing = false;
   let toldManual = false;
@@ -189,15 +200,20 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
     await mkdir(dir, { recursive: true });
     try {
       const pack = packageFor(feed);
+      // Overall progress for the update screen: downloading is most of it, then checking, then installing.
+      const step = (state, progress) => setStatus({ state, available: feed.version, progress });
+      const downloading = (p) => step('downloading', p * 0.85);
       if (isWindows) {
         const installer = path.join(dir, 'Tether-Setup.exe');
-        setStatus({ state: 'downloading', available: feed.version });
-        await download(pack.url, installer, pack);
+        downloading(0);
+        await download(pack.url, installer, pack, downloading);
+        step('verifying', 0.9);
         return { version: feed.version, installer };
       }
       const file = path.join(dir, pack.format === 'tar.xz' ? 'update.tar.xz' : 'update.zip');
-      setStatus({ state: 'downloading', available: feed.version });
-      await download(pack.url, file, pack);
+      downloading(0);
+      await download(pack.url, file, pack, downloading);
+      step('verifying', 0.88);
       const unpacked = path.join(dir, 'unpacked');
       await mkdir(unpacked);
       // Both keep symlinks, bundle metadata and signatures intact.
@@ -212,6 +228,7 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
       const version = await run('/usr/bin/plutil', ['-extract', 'CFBundleShortVersionString', 'raw', '-o', '-',
         path.join(newApp, 'Contents', 'Info.plist')]);
       if (version !== feed.version) throw new Error(`bundle is ${version}, feed said ${feed.version}`);
+      step('verifying', 0.95);
       await rm(file, { force: true });
       return { version, newApp };
     } catch (err) {
@@ -229,7 +246,7 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
       // Silent NSIS install over this one; --force-run opens Tether again when it's done.
       spawn(ready.installer, ['/S', '--updated', ...(reopen ? ['--force-run'] : [])], { detached: true, stdio: 'ignore' }).unref();
       if (reopen) {
-        setStatus({ state: 'installing', available: ready.version });
+        setStatus({ state: 'installing', available: ready.version, progress: 1 });
         notify('Updating Tether', `Installing ${ready.version}. Tether reopens in a moment.`);
         app.quit();
       }
@@ -242,22 +259,33 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
       stdio: 'ignore',
     }).unref();
     if (reopen) {
-      setStatus({ state: 'installing', available: ready.version });
-      notify('Updating Tether', `Installing ${ready.version}. Tether reopens in a moment.`);
-      app.quit();
+      setStatus({ state: 'installing', available: ready.version, progress: 1 });
+      // A moment on the finished bar before the window closes.
+      setTimeout(() => app.quit(), 700);
     }
   }
 
-  // Fully automatic: install as soon as Tether isn't sharing / showing the iPhone screen.
-  async function installWhenIdle() {
-    if (!ready || installing) return;
-    const busy = await isBusy().catch(() => false);
-    if (busy) return setStatus({ state: 'ready', available: ready.version, waiting: true });
-    install({ reopen: true });
+  // Fully automatic, but never while Tether is sharing or showing the iPhone screen: then download, check and
+  // install in one go while the window shows the update screen (progress bar, no clicks), and reopen.
+  async function updateWhenIdle() {
+    if (!pending || working || installing) return;
+    if (await isBusy().catch(() => false)) return setStatus({ state: 'available', available: pending.version, waiting: true });
+    const feed = pending;
+    working = true;
+    try {
+      ready = await prepare(feed);
+      pending = null;
+      install({ reopen: true });
+    } catch (err) {
+      pending = null; // try again at the next check
+      setStatus({ state: 'error', error: err.message });
+    } finally {
+      working = false;
+    }
   }
 
   async function check() {
-    if (working || ready || installing) return;
+    if (working || pending || ready || installing) return;
     working = true;
     try {
       setStatus({ state: 'checking' });
@@ -275,14 +303,14 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
         }
         return;
       }
-      ready = await prepare(feed);
-      setStatus({ state: 'ready', available: ready.version });
-      await installWhenIdle();
+      pending = feed;
+      setStatus({ state: 'available', available: feed.version });
     } catch (err) {
       setStatus({ state: 'error', error: err.message }); // try again at the next check
     } finally {
       working = false;
     }
+    await updateWhenIdle();
   }
 
   // Quitting with an update downloaded: install it on the way out (opens as the new version next time).
@@ -292,6 +320,6 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
 
   setTimeout(check, FIRST_CHECK_MS);
   setInterval(check, CHECK_EVERY_MS);
-  setInterval(installWhenIdle, IDLE_POLL_MS);
+  setInterval(updateWhenIdle, IDLE_POLL_MS);
   return { status: () => status, check };
 }

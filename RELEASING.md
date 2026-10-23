@@ -14,11 +14,12 @@ AWS_ACCESS_KEY_ID=…        # IAM user tether-release-uploader (can only upload
 AWS_SECRET_ACCESS_KEY=…
 ```
 
-The IAM user's policy allows only these two actions, only under `mac/`:
+The IAM user's policy allows only these two actions, only under `mac/` and `windows/` (the bucket policy
+makes the same two folders publicly readable):
 ```json
 { "Version": "2012-10-17", "Statement": [{ "Effect": "Allow",
   "Action": ["s3:PutObject", "s3:DeleteObject"],
-  "Resource": "arn:aws:s3:::tether-releases-eland/mac/*" }] }
+  "Resource": ["arn:aws:s3:::tether-releases-eland/mac/*", "arn:aws:s3:::tether-releases-eland/windows/*"] }] }
 ```
 
 ### Apple signing (Developer ID)
@@ -63,12 +64,14 @@ installs it the next time it isn't sharing.
 
 ## Windows
 `npm run release:win` (same rules: committed, version bumped) builds `Tether-Setup-<version>.exe` on this
-Mac (NSIS, x64; electron-builder brings its own wine for the icon), uploads it to `mac/windows/<version>/`,
-`mac/windows/Tether-Setup.exe` (the website's **Download for Windows**) and `mac/windows/latest.json` last,
-then deletes the previous Windows version. The `mac/` prefix is only because the bucket's public read and the
-upload key cover `mac/*`. Installed Windows apps read `latest.json` → `setup` and run the new installer silently.
+Mac (NSIS, x64; electron-builder brings its own wine for the icon), uploads it to `windows/<version>/`,
+`windows/Tether-Setup.exe` (the website's **Download for Windows**) and `windows/latest.json` last, then
+deletes the previous Windows version. Installed Windows apps read `latest.json` → `setup` and run the new
+installer silently. 0.1.10 (the first Windows version) reads `mac/windows/latest.json`; the script keeps
+that copy current and removes everything else in `mac/windows/`.
 
 - Unsigned: SmartScreen says "Windows protected your PC" on first open → **More info** → **Run anyway**.
 - No virtual iPhone screen on Windows: the phone shows a whole screen (or a window), and with Touch control
   it clicks, scrolls and types on the shared screen through `native/win-input.ps1` (Windows PowerShell 5.1).
-- Release both: bump once, then `npm run release:mac` and `npm run release:win`.
+- **Release both with one version:** bump once, then `npm run release` (Mac, then Windows). If Windows fails
+  after the Mac part is live, fix it and run `npm run release:win` alone.

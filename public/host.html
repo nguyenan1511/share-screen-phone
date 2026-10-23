@@ -97,7 +97,7 @@
             <span class="hint">Mac: macOS 13 or later, Apple silicon (M1 and newer), or the <a href="https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/Tether-Intel.dmg">Intel Mac version</a>. Not verified by Apple yet, so the first open takes one extra step: <a href="/install">how to open it</a>. Windows: Windows 10 or 11; if Windows says it protected your PC, click More info, then Run anyway.</span>
             <div class="row">
               <a class="pill pill-primary" href="https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/Tether.dmg">Download for Mac</a>
-              <a class="pill pill-primary" href="https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/windows/Tether-Setup.exe">Download for Windows</a>
+              <a class="pill pill-primary" href="https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/windows/Tether-Setup.exe">Download for Windows</a>
             </div>
           </div>
         </li>
@@ -262,6 +262,17 @@
 
   <video id="preview" muted playsinline hidden></video>
 
+  <!-- Tether app only: shown while it updates itself (desktop/updater.js); the rest of the page is inert. -->
+  <div class="update-screen desktop-only" id="updateScreen" hidden role="alertdialog" aria-modal="true" aria-labelledby="updateTitle" aria-describedby="updateStep">
+    <div class="update-box">
+      <img class="brand-mark update-mark" src="/icons/mark.svg" alt="">
+      <h2 id="updateTitle">Updating Tether</h2>
+      <p class="update-step" id="updateStep">Getting ready…</p>
+      <div class="update-bar" id="updateBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="updateFill"></span></div>
+      <p class="hint">Please wait and don't quit Tether. It opens again by itself when the update is done.</p>
+    </div>
+  </div>
+
   <script type="module">
     import { api, getInfo, openSignaling, createPeer, preferH264, boostStartBitrate, watchStats } from './rtc.js';
     import { startTurboSender, turboSupported } from './turbo.js';
@@ -349,16 +360,38 @@
         dev: () => 'Development build',
         checking: () => 'Checking for updates…',
         'up-to-date': () => 'Up to date',
+        available: (s) => (s.waiting ? `${s.available} installs when you stop sharing` : `${s.available} available`),
         downloading: (s) => `Downloading ${s.available}…`,
+        verifying: (s) => `Checking ${s.available}…`,
         ready: (s) => (s.waiting ? `${s.available} installs when you stop sharing` : `${s.available} ready`),
         installing: (s) => `Installing ${s.available}…`,
         manual: (s) => `${s.available} available: ${s.reason}`,
         error: () => 'Couldn\'t check for updates (will retry)',
         idle: () => '',
       };
+      // The update screen: covers the page (nothing clickable or typeable behind it) while Tether downloads,
+      // checks and installs the new version, then the app closes and reopens.
+      const UPDATE_STEP = {
+        downloading: (pct) => `Downloading… ${pct}%`,
+        verifying: () => 'Checking the update…',
+        installing: () => 'Installing… Tether opens again in a moment.',
+      };
+      function showUpdateScreen(s) {
+        const on = Boolean(UPDATE_STEP[s.state]) && !s.dev;
+        if (!on && $('updateScreen').hidden) return;
+        $('updateScreen').hidden = !on;
+        for (const el of document.body.children) if (el.id !== 'updateScreen' && el.tagName !== 'SCRIPT') el.inert = on;
+        if (!on) return;
+        const pct = Math.round((s.progress ?? 0) * 100);
+        $('updateTitle').textContent = `Updating Tether to ${s.available}`;
+        $('updateStep').textContent = UPDATE_STEP[s.state](pct);
+        $('updateFill').style.width = `${Math.max(pct, 3)}%`;
+        $('updateBar').setAttribute('aria-valuenow', String(pct));
+      }
       window.tether.onUpdate((s) => {
         const detail = (UPDATE_TEXT[s.state] ?? (() => ''))(s);
         $('appVersion').textContent = `Tether ${s.current}${detail ? ` · ${detail}` : ''}`;
+        showUpdateScreen(s);
       });
     }
 

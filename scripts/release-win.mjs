@@ -7,8 +7,10 @@
 // 3. uploads it versioned, then the "always newest" Tether-Setup.exe, then latest.json LAST
 // 4. reads latest.json back from the public URL, then deletes the previous version's installer
 //
-// Files live under mac/windows/ because the bucket's public-read policy and the upload key both cover mac/* only.
-// The installed app reads mac/windows/latest.json (desktop/updater.js: `setup`).
+// Files live in windows/ (Mac in mac/). The installed app reads windows/latest.json (desktop/updater.js: `setup`).
+// The first Windows version (0.1.10) read mac/windows/latest.json: that copy keeps being updated so it still
+// finds new versions; its old installers there are removed.
+// `npm run release` releases the Mac and the Windows app with the same version, one after the other.
 import { DeleteObjectsCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -38,12 +40,14 @@ if (!dryRun) {
     if (!process.env[k]) fail(`${k} is missing (put it in .env.release)`);
   }
 }
-const PREFIX = 'mac/windows';
+const PREFIX = 'windows';
+const LEGACY_PREFIX = 'mac/windows'; // where 0.1.10 looks for updates
 const base = dryRun ? (process.env.TETHER_RELEASE_BASE || `http://localhost:8099/${PREFIX}`) : `https://${bucket}.s3.${region}.amazonaws.com/${PREFIX}`;
 const setupName = `Tether-Setup-${version}.exe`;
 
 // 1. safety checks
 let previous = null;
+let legacyPrevious = null;
 if (!dryRun) {
   if (execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim()) {
     fail('commit your changes first (the release must match a commit)');
@@ -51,8 +55,10 @@ if (!dryRun) {
   if ((await fetch(`${base}/${version}/${setupName}`, { method: 'HEAD' })).ok) {
     fail(`${version} for Windows is already on S3 — bump the version (npm version patch --no-git-tag-version)`);
   }
-  previous = await fetch(`${base}/latest.json`, { headers: { 'Cache-Control': 'no-cache' } })
+  const versionAt = (url) => fetch(url, { headers: { 'Cache-Control': 'no-cache' } })
     .then((r) => (r.ok ? r.json() : null)).then((j) => j?.version ?? null).catch(() => null);
+  previous = await versionAt(`${base}/latest.json`);
+  legacyPrevious = await versionAt(`${base.replace(`/${PREFIX}`, `/${LEGACY_PREFIX}`)}/latest.json`);
 }
 
 // 2. build
@@ -97,16 +103,21 @@ const EXE = 'application/vnd.microsoft.portable-executable';
 await put(`${PREFIX}/${version}/${setupName}`, setup, EXE, 'public, max-age=31536000, immutable');
 await put(`${PREFIX}/Tether-Setup.exe`, setup, EXE, 'no-cache');
 await put(`${PREFIX}/latest.json`, JSON.stringify(latest, null, 2), 'application/json', 'no-cache');
+await put(`${LEGACY_PREFIX}/latest.json`, JSON.stringify(latest, null, 2), 'application/json', 'no-cache');
 
 // 4. confirm, then remove the previous version
 const check = await fetch(`${base}/latest.json`, { headers: { 'Cache-Control': 'no-cache' } }).then((r) => r.json()).catch(() => null);
 if (check?.version !== version) fail(`public latest.json says ${check?.version ?? 'nothing'}, expected ${version}`);
 console.log(`\n✓ Tether ${version} for Windows is live.\n  Download: ${latest.download}\n  Feed:     ${base}/latest.json`);
 
-if (previous && previous !== version) {
-  console.log(`\nRemoving the previous Windows version (${previous}) from S3…`);
-  const Key = `${PREFIX}/${previous}/Tether-Setup-${previous}.exe`;
-  const res = await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: [{ Key }], Quiet: true } }));
-  if (res.Errors?.length) fail(`could not delete ${res.Errors.map((e) => `${e.Key} (${e.Code})`).join(', ')}`);
-  console.log(`  ✕ ${Key} … removed`);
-}
+// Old installers: the previous version here, and anything left in the old mac/windows/ folder (only its
+// latest.json stays). Deleting a file that's already gone is fine.
+const old = [...new Set([previous, legacyPrevious].filter((v) => v && v !== version))];
+const Objects = [
+  ...old.flatMap((v) => [`${PREFIX}/${v}/Tether-Setup-${v}.exe`, `${LEGACY_PREFIX}/${v}/Tether-Setup-${v}.exe`]),
+  `${LEGACY_PREFIX}/Tether-Setup.exe`,
+].map((Key) => ({ Key }));
+console.log(`\nRemoving older Windows files from S3 (${old.join(', ') || 'none'})…`);
+const res = await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects, Quiet: true } }));
+if (res.Errors?.length) fail(`could not delete ${res.Errors.map((e) => `${e.Key} (${e.Code})`).join(', ')}`);
+console.log('  ✕ done');
