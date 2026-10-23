@@ -1,6 +1,7 @@
-// Tether for Mac (Electron): runs the same local server as `npm start`, with the prebuilt macOS
-// helper, and shows the laptop page in its own window. Phones still connect to this Mac over Wi-Fi.
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, nativeTheme, session, shell, systemPreferences } from 'electron';
+// Tether for Mac and Windows (Electron): runs the same local server as `npm start`, with the prebuilt macOS
+// helper (or, on Windows, native/win-input.ps1), and shows the laptop page in its own window. Phones still
+// connect to this computer over Wi-Fi.
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, nativeTheme, screen, session, shell, systemPreferences } from 'electron';
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -13,10 +14,13 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 if (!app.requestSingleInstanceLock()) app.quit();
 
 // Inside the packaged app the helper sits in Contents/Resources (outside the read-only app archive).
-if (app.isPackaged) process.env.PHONE_SCREEN_HELPER ||= path.join(process.resourcesPath, 'phone-display');
+const isMac = process.platform === 'darwin';
+const isWindows = process.platform === 'win32';
+if (app.isPackaged && isMac) process.env.PHONE_SCREEN_HELPER ||= path.join(process.resourcesPath, 'phone-display');
+if (app.isPackaged && isWindows) process.env.TETHER_WIN_INPUT ||= path.join(process.resourcesPath, 'win-input.ps1');
 // Lets the server clear Tether's own stale Accessibility entry before asking again (never set for dev runs,
 // which borrow Terminal's permission).
-if (app.isPackaged) process.env.TETHER_APP_ID ||= 'com.nguyenan.tether';
+if (app.isPackaged && isMac) process.env.TETHER_APP_ID ||= 'com.nguyenan.tether';
 process.env.PORT ||= '3001';
 
 await import('../server.js');
@@ -75,14 +79,24 @@ function resetScreenPermission() {
 
 // The page reports a failed share (AbortError etc.): in the app that almost always means this permission,
 // unless the user just cancelled our own screen picker.
-ipcMain.handle('tether:share-failed', () => (Date.now() - userCancelledAt < 5000 ? null : explainScreenPermission()));
+ipcMain.handle('tether:share-failed', () => (!isMac || Date.now() - userCancelledAt < 5000 ? null : explainScreenPermission()));
+
+// Windows: the iPhone's touches go to the shared screen, so the server needs where it is, in physical pixels.
+function share(source) {
+  if (isWindows) {
+    const display = screen.getAllDisplays().find((d) => String(d.id) === source.display_id) ?? screen.getPrimaryDisplay();
+    globalThis.tetherSharedScreen = screen.dipToScreenRect(null, display.bounds);
+  }
+  return { video: source };
+}
 
 // Share screen: when the iPhone screen exists, share it right away (no picker). Otherwise ask which screen.
 function handleScreenRequests(port) {
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
     try {
       // Check permission before touching the screen list: asking for it is what makes macOS show its prompt.
-      const status = systemPreferences.getMediaAccessStatus('screen');
+      // (Windows has no such permission.)
+      const status = isMac ? systemPreferences.getMediaAccessStatus('screen') : 'granted';
       if (status !== 'granted') {
         callback({});
         if (status === 'not-determined') return askMacOS(); // first time: macOS's prompt alone
@@ -95,10 +109,10 @@ function handleScreenRequests(port) {
         userCancelledAt = Date.now();
         return explainScreenPermission(status);
       }
-      const display = await fetch(`http://localhost:${port}/api/display`).then((r) => r.json()).catch(() => null);
+      const display = isMac ? await fetch(`http://localhost:${port}/api/display`).then((r) => r.json()).catch(() => null) : null;
       const iphone = display?.active && sources.find((s) => s.display_id === String(display.displayID));
       if (iphone) return callback({ video: iphone });
-      if (sources.length === 1) return callback({ video: sources[0] });
+      if (sources.length === 1) return callback(share(sources[0]));
       const names = sources.map((s, i) => (s.name && s.name !== 'Entire screen' ? s.name : `Screen ${i + 1}`));
       const { response } = await dialog.showMessageBox(win, {
         type: 'question',
@@ -107,7 +121,7 @@ function handleScreenRequests(port) {
         cancelId: names.length,
       });
       if (response >= sources.length) userCancelledAt = Date.now();
-      callback(response < sources.length ? { video: sources[response] } : {});
+      callback(response < sources.length ? share(sources[response]) : {});
     } catch {
       callback({});
     }
@@ -123,6 +137,7 @@ async function openWindow() {
     minWidth: 720,
     minHeight: 600,
     title: 'Tether',
+    autoHideMenuBar: true, // Windows: no File/Edit menu bar under the title
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#f5f5f7', // the page's background, no flash
     webPreferences: { contextIsolation: true, sandbox: true, preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)) },
   });
@@ -152,8 +167,8 @@ let lastStatus = null;
 function startUpdates() {
   if (updater) return;
   updater = startUpdater({
-    feedUrl: process.env.TETHER_UPDATE_FEED || pkg.tether.updateFeed,
-    downloadUrl: pkg.tether.downloadUrl,
+    feedUrl: process.env.TETHER_UPDATE_FEED || (isWindows ? pkg.tether.updateFeedWindows : pkg.tether.updateFeed),
+    downloadUrl: isWindows ? pkg.tether.downloadUrlWindows : pkg.tether.downloadUrl,
     isBusy: async () => Boolean(win && (await win.webContents.executeJavaScript('window.tetherBusy ? window.tetherBusy() : false'))),
     onStatus: (status) => {
       lastStatus = status;

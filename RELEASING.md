@@ -60,3 +60,15 @@ installs it the next time it isn't sharing.
   instead of 174 / 180 MB for 0.1.8.
 - `latest.json` still carries `zip` (a universal app merged from the two builds) for installed 0.1.8 and older,
   which only read that field. Drop it from `scripts/release-mac.mjs` once nobody runs those versions.
+
+## Windows
+`npm run release:win` (same rules: committed, version bumped) builds `Tether-Setup-<version>.exe` on this
+Mac (NSIS, x64; electron-builder brings its own wine for the icon), uploads it to `mac/windows/<version>/`,
+`mac/windows/Tether-Setup.exe` (the website's **Download for Windows**) and `mac/windows/latest.json` last,
+then deletes the previous Windows version. The `mac/` prefix is only because the bucket's public read and the
+upload key cover `mac/*`. Installed Windows apps read `latest.json` → `setup` and run the new installer silently.
+
+- Unsigned: SmartScreen says "Windows protected your PC" on first open → **More info** → **Run anyway**.
+- No virtual iPhone screen on Windows: the phone shows a whole screen (or a window), and with Touch control
+  it clicks, scrolls and types on the shared screen through `native/win-input.ps1` (Windows PowerShell 5.1).
+- Release both: bump once, then `npm run release:mac` and `npm run release:win`.

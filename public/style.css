@@ -107,6 +107,8 @@ code, .mono { font-family: var(--mono); font-size: 0.82em; letter-spacing: 0; }
 .hosted .local-only, body:not(.hosted) .hosted-only { display: none !important; }
 /* Only inside the Tether Mac app (window.tether from desktop/preload.cjs). */
 body:not(.desktop) .desktop-only { display: none !important; }
+/* Tether for Windows has no iPhone screen (virtual display) or Mac shortcuts. */
+.windows .mac-only { display: none !important; }
 fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 
 /* ---------- buttons ---------- */

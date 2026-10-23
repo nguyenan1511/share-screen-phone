@@ -2,7 +2,8 @@
 // signed with an Apple Developer ID; Tether is ad-hoc signed for now, so this does the same job by hand:
 // check the feed on S3, download the new version in the background, verify it, and swap the app in place as
 // soon as Tether is idle (never while sharing), then reopen it. It downloads the build for this Mac's chip as an
-// xz tarball, about a third of a universal zip, which electron-updater can't do.
+// xz tarball, about a third of a universal zip, which electron-updater can't do. On Windows it downloads the new
+// installer (win/latest.json → setup) and runs it silently; the installer closes Tether and opens it again.
 import { app, Notification, shell } from 'electron';
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -101,6 +102,12 @@ export async function cleanUpOldVersions() {
   if (!app.isPackaged) return;
   const appPath = path.resolve(process.execPath, '..', '..', '..');
   const temp = app.getPath('temp');
+  if (isWindows) {
+    for (const name of await readdir(temp).catch(() => [])) {
+      if (name.startsWith('tether-update-')) await rm(path.join(temp, name), { recursive: true, force: true });
+    }
+    return;
+  }
   const plistOf = (bundle) => path.join(bundle, 'Contents', 'Info.plist');
   const readPlist = (bundle, key) => run('/usr/bin/plutil', ['-extract', key, 'raw', '-o', '-', plistOf(bundle)]).catch(() => '');
   const bundleId = await readPlist(appPath, 'CFBundleIdentifier');
@@ -131,7 +138,8 @@ export async function cleanUpOldVersions() {
 
 // The download for this Mac: the Apple silicon or Intel build (half the size of a universal one, xz-compressed).
 // Feeds from before 0.1.9 only have `zip` (universal).
-const packageFor = (feed) => feed.updates?.[process.arch] || feed.zip;
+const isWindows = process.platform === 'win32';
+const packageFor = (feed) => (isWindows ? feed.setup : feed.updates?.[process.arch] || feed.zip);
 
 /**
  * @param {{ feedUrl: string, downloadUrl: string, isBusy: () => Promise<boolean>, onStatus: (s: object) => void }} opts
@@ -164,6 +172,7 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
 
   // Updates need Tether in a folder it can write to (normally /Applications), not on the mounted DMG.
   async function canSelfUpdate() {
+    if (isWindows) return null; // the installer puts it in the user's own folder (no admin needed)
     if (appPath.startsWith('/Volumes/')) return 'move it to Applications to get updates';
     try {
       await access(path.dirname(appPath), constants.W_OK);
@@ -180,6 +189,12 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
     await mkdir(dir, { recursive: true });
     try {
       const pack = packageFor(feed);
+      if (isWindows) {
+        const installer = path.join(dir, 'Tether-Setup.exe');
+        setStatus({ state: 'downloading', available: feed.version });
+        await download(pack.url, installer, pack);
+        return { version: feed.version, installer };
+      }
       const file = path.join(dir, pack.format === 'tar.xz' ? 'update.tar.xz' : 'update.zip');
       setStatus({ state: 'downloading', available: feed.version });
       await download(pack.url, file, pack);
@@ -210,6 +225,16 @@ export function startUpdater({ feedUrl, downloadUrl, isBusy, onStatus }) {
     if (!ready || installing) return;
     if (!app.isPackaged) return setStatus({ state: 'ready', available: ready.version, dev: true }); // never swap a dev Electron
     installing = true;
+    if (isWindows) {
+      // Silent NSIS install over this one; --force-run opens Tether again when it's done.
+      spawn(ready.installer, ['/S', '--updated', ...(reopen ? ['--force-run'] : [])], { detached: true, stdio: 'ignore' }).unref();
+      if (reopen) {
+        setStatus({ state: 'installing', available: ready.version });
+        notify('Updating Tether', `Installing ${ready.version}. Tether reopens in a moment.`);
+        app.quit();
+      }
+      return;
+    }
     const script = path.join(app.getPath('temp'), 'tether-install.sh');
     writeFileSync(script, INSTALL_SCRIPT, { mode: 0o755 });
     spawn('/bin/sh', [script, String(process.pid), appPath, ready.newApp, reopen ? '1' : '0'], {

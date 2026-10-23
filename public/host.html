@@ -90,19 +90,19 @@
 
         <li class="card hosted-only" aria-labelledby="macAppTitle">
           <div class="card-head">
-            <h2 id="macAppTitle">Want a real second screen? <span>Get the Mac app.</span></h2>
+            <h2 id="macAppTitle">Want more? <span>Get the app for Mac or Windows.</span></h2>
           </div>
-          <p class="body-copy">From this website you can show any screen, window or Chrome tab on the iPhone. The Tether app for Mac adds a separate iPhone screen: a second monitor only the phone shows, sized for your iPhone, with an instant cursor and shortcuts.</p>
+          <p class="body-copy">From this website you can show any screen, window or Chrome tab on the iPhone. The Tether app updates itself and lets the iPhone click and type on the shared screen. On a Mac it also adds a separate iPhone screen: a second monitor only the phone shows, sized for your iPhone, with an instant cursor and shortcuts.</p>
           <div class="card-foot">
-            <span class="hint">macOS 13 or later, Apple silicon (M1 and newer). <a href="https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/Tether-Intel.dmg">Intel Mac version</a>. Not verified by Apple yet, so the first open takes one extra step: <a href="/install">how to open it</a>.</span>
+            <span class="hint">Mac: macOS 13 or later, Apple silicon (M1 and newer), or the <a href="https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/Tether-Intel.dmg">Intel Mac version</a>. Not verified by Apple yet, so the first open takes one extra step: <a href="/install">how to open it</a>. Windows: Windows 10 or 11; if Windows says it protected your PC, click More info, then Run anyway.</span>
             <div class="row">
-              <a class="link-button" href="/install">Install guide</a>
               <a class="pill pill-primary" href="https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/Tether.dmg">Download for Mac</a>
+              <a class="pill pill-primary" href="https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/windows/Tether-Setup.exe">Download for Windows</a>
             </div>
           </div>
         </li>
 
-        <li class="card local-only" id="vdCard" aria-labelledby="sizeTitle">
+        <li class="card local-only mac-only" id="vdCard" aria-labelledby="sizeTitle">
           <div class="card-head">
             <h2 id="sizeTitle">Screen. <span>Like plugging in a monitor only the phone shows.</span></h2>
             <span class="status"><span class="dot" id="vdDot"></span><span id="vdShort">Off</span></span>
@@ -230,7 +230,7 @@
           <p class="stats-line" id="streamStats">–</p>
         </section>
 
-        <section class="card local-only" aria-labelledby="hotkeyTitle">
+        <section class="card local-only mac-only" aria-labelledby="hotkeyTitle">
           <h2 id="hotkeyTitle" class="side-title">Shortcuts.</h2>
           <div class="shortcut-row" data-hotkey="jump">
             <div>
@@ -329,7 +329,17 @@
 
     // Inside the Mac app, Share picks the iPhone screen by itself (see desktop/main.js).
     const inDesktopApp = navigator.userAgent.includes('Electron');
-    if (inDesktopApp) $('modeHint').textContent = 'Click Share screen. Once the iPhone screen is added, it is picked for you.';
+    // Tether for Windows: no iPhone screen (virtual display); the phone shows, and can control, a whole screen.
+    const onWindows = window.tether?.platform === 'win32';
+    if (onWindows) {
+      document.body.classList.add('windows');
+      document.querySelector('.hero p').textContent = 'Show this PC on your iPhone. Tap, scroll and type from the phone.';
+    }
+    if (inDesktopApp) {
+      $('modeHint').textContent = onWindows
+        ? 'Click Share screen, then pick the screen the iPhone should show.'
+        : 'Click Share screen. Once the iPhone screen is added, it is picked for you.';
+    }
 
     // The Mac app updates itself, but never while this is true (desktop/updater.js asks every minute).
     window.tetherBusy = () => Boolean(displayTrack || virtualDisplay);
@@ -734,7 +744,13 @@
       return displaySurface === 'monitor' && Math.abs(width / height - bounds.width / bounds.height) < 0.02;
     }
 
+    // Windows app: the phone controls whichever whole screen is shared (the app tells the server where it is).
+    function sharingWindowsScreen() {
+      return onWindows && Boolean(displayTrack) && mode() === 'full' && displayTrack.getSettings().displaySurface === 'monitor';
+    }
+
     function controlAllowed() {
+      if (onWindows) return $('allowControl').checked && sharingWindowsScreen();
       return $('allowControl').checked && sharingVirtualDisplay() && Boolean(virtualDisplay.accessibility);
     }
 
@@ -768,6 +784,7 @@
       let why = '';
       $('axGrant').hidden = !($('allowControl').checked && virtualDisplay && !virtualDisplay.accessibility);
       if (!$('allowControl').checked) why = 'Off: the phone only shows the screen.';
+      else if (onWindows) why = displayTrack ? 'Works when a whole screen is shared, not a window.' : 'Share screen to use it.';
       else if (!virtualDisplay) why = 'Works on the iPhone screen: add it above first.';
       else if (!virtualDisplay.accessibility) why = inDesktopApp
         ? 'macOS needs to allow Tether to control the Mac: click Allow control, then turn on Tether in Accessibility.'
@@ -775,7 +792,7 @@
       else if (!displayTrack) why = 'Share screen and pick the iPhone screen in Chrome\'s picker.';
       else if (!sharingVirtualDisplay()) why = 'You are sharing a different screen. Stop, Share screen, then pick the “Entire screen” that matches the iPhone screen.';
       $('controlState').textContent = allowed
-        ? 'iPhone can control the iPhone screen. Your laptop mouse keeps working too: after each touch the pointer goes back to where it was.'
+        ? `iPhone can control the ${onWindows ? 'shared' : 'iPhone'} screen. Your laptop mouse keeps working too: after each touch the pointer goes back to where it was.`
         : why;
       if (channel?.readyState === 'open') channel.send(JSON.stringify({ t: 'control', allowed }));
     }

@@ -1,6 +1,7 @@
 // electron-builder afterPack hook:
-//  1. drop Chromium's translations except English (~40 MB unpacked: 55 languages Tether's UI never shows)
-//  2. ad-hoc sign the finished app. Without any signature, Apple silicon Macs report an unsigned app as "damaged"
+//  1. drop Chromium's translations except English (~40 MB unpacked: 55 languages Tether's UI never shows),
+//     on the Mac and on Windows
+//  2. Mac: ad-hoc sign the finished app. Without any signature, Apple silicon Macs report an unsigned app as "damaged"
 //     and refuse to open it. Ad-hoc signing is not Apple's notarized signing: users still confirm once in
 //     Privacy & Security.
 const { execFileSync } = require('node:child_process');
@@ -10,6 +11,11 @@ const path = require('node:path');
 const KEEP_LANGUAGES = new Set(['en.lproj', 'Base.lproj']);
 
 exports.default = async function afterPack(context) {
+  if (context.electronPlatformName === 'win32') {
+    const locales = path.join(context.appOutDir, 'locales');
+    for (const name of readdirSync(locales)) if (name !== 'en-US.pak') rmSync(path.join(locales, name), { force: true });
+    return;
+  }
   if (context.electronPlatformName !== 'darwin') return;
   const app = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   const resources = path.join(app, 'Contents', 'Frameworks', 'Electron Framework.framework', 'Versions', 'A', 'Resources');

@@ -478,8 +478,86 @@ let displayQueue = Promise.resolve();
 
 const INPUT_TYPES = new Set(['click', 'rightclick', 'down', 'drag', 'up', 'move', 'scroll', 'key', 'text', 'missioncontrol', 'desktop']);
 
+// ---- Windows: iPhone touches on the shared screen (native/win-input.ps1) ----
+// No virtual display on Windows: the phone controls whichever whole screen is shared. The Windows app tells the
+// server which one (globalThis.tetherSharedScreen, physical pixels, set in desktop/main.js); the helper gets
+// commands already in screen pixels.
+const WIN_INPUT_SCRIPT = process.env.TETHER_WIN_INPUT || join(NATIVE_DIR, 'win-input.ps1');
+const WIN_VK = {
+  Enter: 0x0d, Tab: 0x09, Space: 0x20, Backspace: 0x08, Escape: 0x1b, Delete: 0x2e,
+  ArrowLeft: 0x25, ArrowUp: 0x26, ArrowRight: 0x27, ArrowDown: 0x28, Home: 0x24, End: 0x23, PageUp: 0x21, PageDown: 0x22,
+};
+let winInput = null; // { proc, rect }
+
+function winInputLine(e, r) {
+  const at = (x, y) => (Number.isFinite(x) && Number.isFinite(y)
+    ? `${Math.round(r.x + Math.min(Math.max(x, 0), 1) * (r.width - 1))} ${Math.round(r.y + Math.min(Math.max(y, 0), 1) * (r.height - 1))}`
+    : null);
+  // The iPhone speaks Mac: ⌘ is Ctrl here, and ⌥ with Backspace/Delete/arrows (by word) is Ctrl too.
+  const mods = (list, k) => (list ?? []).map((m) => (m === 'cmd' || (m === 'alt' && /Backspace|Delete|Arrow/.test(k)) ? 'ctrl' : m));
+  const modArg = (list) => [...new Set(list)].join(',') || '-';
+  switch (e.t) {
+    case 'click': case 'rightclick': return `click ${e.t === 'click' ? 'L' : 'R'} ${at(e.x, e.y) ?? '-'}`;
+    case 'down': case 'drag': case 'up': return at(e.x, e.y) && `${e.t} ${at(e.x, e.y)}`;
+    case 'move': return `move ${Math.round((e.dx || 0) * r.width)} ${Math.round((e.dy || 0) * r.height)}`;
+    case 'scroll': {
+      // Same direction as on the Mac; 120 per wheel notch ≈ 100 px.
+      const line = `scroll ${Math.round(-(e.dx || 0) * r.width * 1.2)} ${Math.round((e.dy || 0) * r.height * 1.2)}`;
+      return at(e.x, e.y) ? `${line} ${at(e.x, e.y)}` : line;
+    }
+    case 'key': return WIN_VK[e.k] ? `key ${WIN_VK[e.k]} ${modArg(mods(e.mods, e.k))}` : null;
+    case 'text': {
+      if (typeof e.s !== 'string' || !e.s) return null;
+      const m = mods(e.mods, '');
+      // Shortcuts like ⌘S: a letter or digit with modifiers is a key press, not typed text.
+      if (m.length && /^[a-z0-9]$/i.test(e.s)) return `key ${e.s.toUpperCase().charCodeAt(0)} ${modArg(m)}`;
+      return `text ${Buffer.from(e.s.slice(0, 2000), 'utf8').toString('base64')}`;
+    }
+    case 'missioncontrol': return 'key 9 win'; // Task View
+    case 'desktop': return `key ${e.dir === 'left' ? 0x25 : 0x27} ctrl,win`;
+    default: return null;
+  }
+}
+
+function startWinInput() {
+  if (winInput) return winInput;
+  const proc = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', WIN_INPUT_SCRIPT],
+    { stdio: ['pipe', 'ignore', 'inherit'], windowsHide: true });
+  const current = { proc, rect: null };
+  winInput = current;
+  proc.stdin.on('error', () => {});
+  proc.on('error', (err) => console.warn(`Windows input helper: ${err.message}`));
+  proc.on('exit', () => {
+    if (winInput === current) winInput = null;
+  });
+  return current;
+}
+
+function handleWinInput(events) {
+  const r = globalThis.tetherSharedScreen;
+  if (!r) return false;
+  const w = startWinInput();
+  const rectLine = `rect ${r.x} ${r.y} ${r.width} ${r.height}`;
+  if (w.rect !== rectLine) w.proc.stdin.write(`${(w.rect = rectLine)}\n`);
+  for (const e of events) {
+    const line = INPUT_TYPES.has(e?.t) && winInputLine(e, r);
+    if (line) w.proc.stdin.write(`${line}\n`);
+  }
+  return true;
+}
+
 async function handleInput(req, res) {
   if (!isLaptop(req)) return json(res, 403, { error: 'input only accepted from the laptop page on localhost' });
+  if (process.platform === 'win32') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req)) ?? {};
+    } catch {
+      return json(res, 400, { error: 'body must be JSON' });
+    }
+    if (!handleWinInput(Array.isArray(body.events) ? body.events : [])) return json(res, 409, { error: 'no shared screen' });
+    return json(res, 200, { ok: true });
+  }
   if (!helper?.info) return json(res, 409, { error: 'no virtual display' });
   let events;
   try {
@@ -599,8 +677,9 @@ setInterval(() => {
   for (const [addr, f] of joinFails) if (now - f.since > 60_000) joinFails.delete(addr);
 }, 5000);
 
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stopHelper(); process.exit(0); });
-process.on('exit', stopHelper);
+const stopAll = () => { stopHelper(); winInput?.proc.kill(); };
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stopAll(); process.exit(0); });
+process.on('exit', stopAll);
 
 // Listen on IPv4 explicitly: the phone connects over IPv4, and on macOS a default dual-stack listener
 // can start "successfully" on a port another app already holds for IPv4. The phone would then reach

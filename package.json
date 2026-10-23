@@ -10,7 +10,9 @@
     "app": "electron desktop/main.js",
     "dist:mac": "npm run build:helpers && electron-builder --mac --arm64 --x64",
     "release:mac": "node scripts/release-mac.mjs",
-    "build:helpers": "mkdir -p native/.build && swiftc -O -target arm64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-arm64 && swiftc -O -target x86_64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-x64"
+    "build:helpers": "mkdir -p native/.build && swiftc -O -target arm64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-arm64 && swiftc -O -target x86_64-apple-macos13 -import-objc-header native/CGVirtualDisplay.h native/phone-display.swift -o native/.build/phone-display-x64",
+    "dist:win": "electron-builder --win nsis --x64",
+    "release:win": "node scripts/release-win.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -33,12 +35,6 @@
       "public/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "native/.build/phone-display-${arch}",
-        "to": "phone-display"
-      }
-    ],
     "directories": {
       "output": "dist",
       "buildResources": "assets"
@@ -59,17 +55,49 @@
       "gatekeeperAssess": false,
       "minimumSystemVersion": "13.0",
       "icon": "assets/icon.png",
-      "artifactName": "Tether-${version}-${arch}.${ext}"
+      "artifactName": "Tether-${version}-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "native/.build/phone-display-${arch}",
+          "to": "phone-display"
+        }
+      ]
     },
     "dmg": {
       "artifactName": "Tether-${arch}.dmg",
       "title": "Tether"
     },
-    "afterPack": "scripts/after-pack.cjs"
+    "afterPack": "scripts/after-pack.cjs",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "extraResources": [
+        {
+          "from": "native/win-input.ps1",
+          "to": "win-input.ps1"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Tether-Setup-${version}.${ext}",
+      "differentialPackage": false,
+      "shortcutName": "Tether"
+    }
   },
   "author": "nguyenan1511",
   "tether": {
     "updateFeed": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/latest.json",
-    "downloadUrl": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/Tether.dmg"
+    "downloadUrl": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/Tether.dmg",
+    "updateFeedWindows": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/windows/latest.json",
+    "downloadUrlWindows": "https://tether-releases-eland.s3.ap-southeast-1.amazonaws.com/mac/windows/Tether-Setup.exe"
   }
 }
