@@ -101,16 +101,25 @@ if (identity) {
   if (ok.status !== 0) fail(`Developer ID found, but no notary login. Run once: xcrun notarytool store-credentials ${notaryProfile}`);
 }
 console.log(`Building Tether ${version}… (${identity ? `signed by ${identity}, notarized` : 'ad-hoc signed — no Developer ID certificate'})`);
-const signArgs = identity ? ['--', `-c.mac.identity=${identity}`, '-c.mac.hardenedRuntime=true',
+const signArgs = identity ? [`-c.mac.identity=${identity}`, '-c.mac.hardenedRuntime=true',
   '-c.mac.entitlements=assets/entitlements.mac.plist', '-c.mac.entitlementsInherit=assets/entitlements.mac.plist'] : [];
-const built = spawnSync('npm', ['run', '-s', 'dist:mac', ...signArgs], {
-  cwd: root,
-  stdio: 'inherit',
-  env: identity
-    ? { ...process.env, TETHER_SIGN_IDENTITY: identity, APPLE_KEYCHAIN_PROFILE: notaryProfile }
-    : { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' },
-});
-if (built.status !== 0) fail('build failed');
+const buildEnv = identity
+  ? { ...process.env, TETHER_SIGN_IDENTITY: identity, APPLE_KEYCHAIN_PROFILE: notaryProfile }
+  : { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' };
+if (spawnSync('npm', ['run', '-s', 'build:helpers'], { cwd: root, stdio: 'inherit' }).status !== 0) fail('helper build failed');
+// One chip at a time, and again if it fails: making a dmg mounts a disk named "Tether", and macOS sometimes still
+// holds it for a moment when electron-builder ejects it ("hdiutil detach … exit 16"), which fails the build.
+for (const arch of ['arm64', 'x64']) {
+  let ok = false;
+  for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
+    if (attempt > 1) {
+      console.log(`  • ${arch} build failed, trying again (${attempt}/3)…`);
+      spawnSync('/usr/bin/hdiutil', ['detach', '-force', '/Volumes/Tether'], { stdio: 'ignore' });
+    }
+    ok = spawnSync('npx', ['electron-builder', '--mac', `--${arch}`, ...signArgs], { cwd: root, stdio: 'inherit', env: buildEnv }).status === 0;
+  }
+  if (!ok) fail(`build failed (${arch})`);
+}
 const dist = path.join(root, 'dist');
 const run = (cmd, args, what) => {
   if (spawnSync(cmd, args, { stdio: 'inherit' }).status !== 0) fail(`${what} failed`);
