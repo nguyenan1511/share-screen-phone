@@ -15,6 +15,12 @@ const PIECE = 16 * 1024;            // safe message size between Chrome and Safa
 const MAX_BUFFERED = 256 * 1024;
 const KEYFRAME_EVERY_MS = 4000;     // self-heal: periodic keyframe
 const HEADER = 14;
+// Phone: frames allowed to wait for the decoder. More means the phone can't keep up (often after a while, when it
+// warms up and slows down): then waiting frames are skipped up to the next keyframe, so the delay never builds up.
+const MAX_DECODE_QUEUE = 2;
+// Frames older than this when they arrive (a Wi-Fi stall delivers them in a clump) are skipped the same way.
+const MAX_FRAME_AGE_MS = 400;
+const KEYFRAME_ASK_EVERY_MS = 500;
 
 export const turboSupported = () =>
   typeof VideoEncoder !== 'undefined' && typeof MediaStreamTrackProcessor !== 'undefined';
@@ -183,24 +189,33 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
     gaveUp = true;
     onUnsupported();
   };
-  const stats = { frames: 0, bytes: 0, delay: 0, since: performance.now() };
+  const stats = { frames: 0, bytes: 0, delay: 0, dropped: 0, since: performance.now() };
+  let lastKeyAsk = 0;
+  const askKeyframe = () => {
+    if (performance.now() - lastKeyAsk < KEYFRAME_ASK_EVERY_MS) return;
+    lastKeyAsk = performance.now();
+    needKeyframe();
+  };
+
+  // Drawn the moment it's decoded (lowest delay); deliver() keeps the decoder from building a backlog.
+  function draw(frame) {
+    if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
+      canvas.width = frame.displayWidth;
+      canvas.height = frame.displayHeight;
+    }
+    ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+    const sentAt = frame.timestamp / 1000;
+    frame.close();
+    const offsetMs = clockOffset();
+    if (offsetMs != null) stats.delay += now() + offsetMs - sentAt;
+    stats.frames++;
+    onFrame();
+  }
 
   function makeDecoder() {
     if (decoder && decoder.state !== 'closed') decoder.close();
     decoder = new VideoDecoder({
-      output(frame) {
-        if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
-          canvas.width = frame.displayWidth;
-          canvas.height = frame.displayHeight;
-        }
-        ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-        const sentAt = frame.timestamp / 1000;
-        frame.close();
-        const offsetMs = clockOffset();
-        if (offsetMs != null) stats.delay += now() + offsetMs - sentAt;
-        stats.frames++;
-        onFrame();
-      },
+      output: draw,
       error() {
         // A few errors (e.g. a lost sync) recover with a keyframe; repeated errors mean this device
         // can't decode the stream, so hand back to Standard video instead of looping.
@@ -208,7 +223,7 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
         errors = errors.filter((e) => t - e < 5000).concat(t);
         if (errors.length > 3) return giveUp();
         waitingForKey = true;
-        needKeyframe();
+        askKeyframe();
         if (config) {
           makeDecoder();
           const { descriptionText, ...decoderConfig } = config;
@@ -247,7 +262,19 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
 
   function deliver(data, info) {
     if (!decoder || decoder.state !== 'configured') return;
-    if (waitingForKey && !info.key) return;
+    // Falling behind: skip to the next keyframe instead of decoding a backlog that only adds delay.
+    const offsetMs = clockOffset();
+    const late = offsetMs != null && now() + offsetMs - info.sentAt > MAX_FRAME_AGE_MS;
+    if (!info.key && (late || decoder.decodeQueueSize > MAX_DECODE_QUEUE)) {
+      waitingForKey = true;
+      stats.dropped++;
+      askKeyframe();
+      return;
+    }
+    if (waitingForKey && !info.key) {
+      askKeyframe();
+      return;
+    }
     waitingForKey = false;
     stats.bytes += data.byteLength;
     decoder.decode(new EncodedVideoChunk({ type: info.key ? 'key' : 'delta', timestamp: Math.round(info.sentAt * 1000), data }));
@@ -265,7 +292,8 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
         if (view.getUint8(0) !== 1) return;
         expected = view.getUint32(2);
         meta = { key: view.getUint8(1) === 1, sentAt: view.getFloat64(6) };
-        buffer = new Uint8Array(expected);
+        // One buffer, reused (EncodedVideoChunk copies the bytes): no garbage per frame, so no GC stutters.
+        if (!buffer || buffer.byteLength < expected) buffer = new Uint8Array(Math.max(expected, 512 * 1024));
         offset = 0;
         return;
       }
@@ -273,8 +301,8 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
       buffer.set(piece, offset);
       offset += piece.byteLength;
       if (offset >= expected) {
+        deliver(buffer.subarray(0, expected), meta);
         expected = 0;
-        deliver(buffer, meta);
       }
     },
     readStats() {
@@ -282,8 +310,9 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
       const text = `Turbo ${canvas.width}×${canvas.height} · ${Math.round(stats.frames / secs)} fps · ` +
         `${((stats.bytes * 8) / secs / 1e6).toFixed(1)} Mbps` +
         (stats.frames && clockOffset() != null ? ` · delay ≈ ${Math.round(stats.delay / stats.frames)} ms` : '') +
-        (decoder ? ` · queue ${decoder.decodeQueueSize}` : '');
-      Object.assign(stats, { frames: 0, bytes: 0, delay: 0, since: performance.now() });
+        (decoder ? ` · queue ${decoder.decodeQueueSize}` : '') +
+        (stats.dropped ? ` · skipped ${stats.dropped}` : '');
+      Object.assign(stats, { frames: 0, bytes: 0, delay: 0, dropped: 0, since: performance.now() });
       return text;
     },
     close() {

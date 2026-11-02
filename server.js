@@ -291,11 +291,16 @@ function phoneCursorEvent(line) {
   return cursorVisible && line !== 'off' ? `data: ${line},${Date.now()}\n\n` : 'data: off\n\n';
 }
 
+// Positions are "latest wins": when a reader falls behind (slow Wi-Fi, a busy phone), skip positions instead of
+// queueing them, else the cursor trails further and further behind (and memory grows) over a long session.
+const STREAM_BACKLOG = 4 * 1024;
+const writeLatest = (res, text) => res.writableLength < STREAM_BACKLOG && res.write(text);
+
 function broadcastCursor(line) {
   lastCursorLine = line;
-  for (const res of cursorStreams) res.write(`${line}\n`);
+  for (const res of cursorStreams) writeLatest(res, `${line}\n`);
   const event = phoneCursorEvent(line);
-  for (const res of phoneCursorStreams) res.write(event);
+  for (const res of phoneCursorStreams) writeLatest(res, event);
 }
 
 function openPhoneCursorStream(req, res) {
@@ -307,7 +312,7 @@ function openPhoneCursorStream(req, res) {
   });
   res.write(`retry: 1000\n${phoneCursorEvent(lastCursorLine)}`);
   phoneCursorStreams.add(res);
-  const keepAlive = setInterval(() => res.write(': ping\n\n'), 15000);
+  const keepAlive = setInterval(() => writeLatest(res, ': ping\n\n'), 15000);
   res.on('close', () => {
     clearInterval(keepAlive);
     phoneCursorStreams.delete(res);

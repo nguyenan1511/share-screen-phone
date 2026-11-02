@@ -1,7 +1,7 @@
 // Tether for Mac and Windows (Electron): runs the same local server as `npm start`, with the prebuilt macOS
 // helper (or, on Windows, native/win-input.ps1), and shows the laptop page in its own window. Phones still
 // connect to this computer over Wi-Fi.
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, nativeTheme, screen, session, shell, systemPreferences } from 'electron';
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, nativeTheme, powerSaveBlocker, screen, session, shell, systemPreferences } from 'electron';
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -139,7 +139,14 @@ async function openWindow() {
     title: 'Tether',
     autoHideMenuBar: true, // Windows: no File/Edit menu bar under the title
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#f5f5f7', // the page's background, no flash
-    webPreferences: { contextIsolation: true, sandbox: true, preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)) },
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+      preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
+      // The window is usually behind other windows while you work on the iPhone screen; Chromium would then slow
+      // its timers more and more (heavily after ~5 minutes), and with them the video and input relay.
+      backgroundThrottling: false,
+    },
   });
   const home = `http://localhost:${port}/`;
   // The drop-zone box opens as a real window; everything else (room links, help) goes to the browser.
@@ -176,6 +183,17 @@ function startUpdates() {
     },
   });
 }
+// While sharing: keep macOS from napping Tether in the background (App Nap), which slows the video and input
+// relay down over a long session. Released as soon as sharing stops.
+let napBlocker = null;
+ipcMain.on('tether:sharing', (_event, sharing) => {
+  if (sharing && napBlocker === null) napBlocker = powerSaveBlocker.start('prevent-app-suspension');
+  else if (!sharing && napBlocker !== null) {
+    powerSaveBlocker.stop(napBlocker);
+    napBlocker = null;
+  }
+});
+
 ipcMain.on('tether:update-request', (event) => lastStatus && event.sender.send('tether:update', lastStatus));
 
 app.on('second-instance', () => {

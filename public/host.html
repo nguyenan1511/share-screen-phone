@@ -813,6 +813,7 @@
     });
 
     function sendControlState() {
+      window.tether?.setSharing?.(Boolean(displayTrack)); // called whenever sharing starts or stops
       const allowed = controlAllowed();
       let why = '';
       $('axGrant').hidden = !($('allowControl').checked && virtualDisplay && !virtualDisplay.accessibility);
