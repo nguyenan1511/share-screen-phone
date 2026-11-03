@@ -215,6 +215,11 @@
             rectCache = null;
           }
           else if (msg.t === 'engine' && msg.value !== 'turbo') showStandardVideo();
+          // The laptop (re)started Turbo, e.g. after a fallback: listen again (its config comes first).
+          else if (msg.t === 'engine' && msg.value === 'turbo' && !turbo && videoCh?.readyState === 'open') {
+            newTurboReceiver();
+            sendRaw({ t: 'keyframe' });
+          }
         };
         channel.onclose = () => setControl(false);
       };
@@ -236,8 +241,20 @@
     }
 
     // ---- Turbo video (WebCodecs, no jitter buffer) ----
+    let videoCh = null;
     function setupVideoChannel(ch) {
+      videoCh = ch;
       ch.binaryType = 'arraybuffer';
+      newTurboReceiver();
+      ch.onmessage = (m) => turbo?.onMessage(m.data);
+      ch.onclose = () => {
+        if (videoCh === ch) videoCh = null;
+        endTurbo();
+      };
+    }
+
+    function newTurboReceiver() {
+      turbo?.close();
       turbo = createTurboReceiver({
         canvas,
         clockOffset: () => clock.offset,
@@ -258,8 +275,6 @@
           endTurbo();
         },
       });
-      ch.onmessage = (m) => turbo?.onMessage(m.data);
-      ch.onclose = endTurbo;
     }
 
     // Turbo has no WebRTC video track, so its stats come from the receiver itself.
@@ -887,13 +902,29 @@
     };
 
     // Back in Safari after switching apps: iOS paused the videos (and may have ended the mirror's stream).
+    // Leaving Safari (home screen, another app, lock): the laptop pauses the Turbo stream and the decoder is put
+    // away; coming back starts both fresh with a keyframe, instead of a backlog and a decoder iOS closed.
+    function setBackground(hidden) {
+      if (hidden) {
+        turbo?.suspend();
+        sendRaw({ t: 'pause' });
+      } else {
+        turbo?.resume();
+        sendRaw({ t: 'resume' });
+      }
+    }
+    addEventListener('pagehide', () => setBackground(true));
     document.addEventListener('visibilitychange', () => {
+      setBackground(document.visibilityState !== 'visible');
       if (document.visibilityState !== 'visible') return;
       if (video.srcObject && video.paused) video.play().catch(() => {});
       if (!fsVideo.webkitDisplayingFullscreen) mirror.drawing = false;
       prepareMirror();
     });
-    addEventListener('pageshow', () => prepareMirror());
+    addEventListener('pageshow', () => {
+      if (document.visibilityState === 'visible') setBackground(false);
+      prepareMirror();
+    });
     document.addEventListener('fullscreenchange', updateFsButton);
     // Four digit boxes: typing moves forward, backspace moves back, pasting fills them all.
     const digitInputs = [...$('digits').querySelectorAll('input')];

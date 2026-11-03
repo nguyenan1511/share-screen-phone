@@ -55,17 +55,23 @@ export async function startTurboSender({ track, channel, bitrate = 15_000_000, o
   let lastFrame = null; // kept so a keyframe can be produced even when the screen is idle
   let lastFrameAt = 0;
   let lastTimestamp = 0;
+  let paused = false; // the phone is in the background: send nothing until it's back
   const captureTimes = new Map();
   const stats = { frames: 0, bytes: 0, skipped: 0, since: performance.now(), hw: '?' };
 
+  let lastConfig = null;
   const encoder = new VideoEncoder({
     output(chunk, meta) {
       if (meta?.decoderConfig) {
         const c = meta.decoderConfig;
-        channel.send(JSON.stringify({
+        lastConfig = JSON.stringify({
           t: 'config', codec: c.codec, codedWidth: c.codedWidth ?? configured?.width, codedHeight: c.codedHeight ?? configured?.height,
           description: c.description ? toBase64(c.description) : null,
-        }));
+        });
+      }
+      // Config before every keyframe (it's tiny): a phone that just (re)started its decoder can always join.
+      if (chunk.type === 'key' && lastConfig) {
+        try { channel.send(lastConfig); } catch {}
       }
       const data = new Uint8Array(chunk.byteLength);
       chunk.copyTo(data);
@@ -134,7 +140,7 @@ export async function startTurboSender({ track, channel, bitrate = 15_000_000, o
         lastFrameAt = performance.now();
         lastTimestamp = frame.timestamp;
         // Skip frames instead of queueing them: a queue is exactly what turns into delay.
-        if (!forceKey && (encoder.encodeQueueSize > 1 || channel.bufferedAmount > MAX_BUFFERED)) {
+        if (paused || (!forceKey && (encoder.encodeQueueSize > 1 || channel.bufferedAmount > MAX_BUFFERED))) {
           frame.close();
           stats.skipped++;
           continue;
@@ -164,6 +170,11 @@ export async function startTurboSender({ track, channel, bitrate = 15_000_000, o
         encode(new VideoFrame(lastFrame, { timestamp: lastTimestamp }), true);
       }
     },
+    // The phone left Safari (or locked): stop sending; back: start again with a keyframe.
+    pause(on) {
+      paused = Boolean(on);
+      if (!paused) this.requestKeyframe();
+    },
     stop() {
       stopped = true;
       clearInterval(statsTimer);
@@ -184,6 +195,10 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
   let expected = 0, buffer = null, offset = 0, meta = null;
   let errors = [];
   let gaveUp = false;
+  // In the background iOS closes (reclaims) the decoder; its errors then say nothing about whether this phone
+  // can decode Turbo, so they don't count, and coming back builds a fresh decoder.
+  let suspended = false;
+  let resumedAt = 0;
   const giveUp = () => {
     if (gaveUp) return;
     gaveUp = true;
@@ -220,17 +235,29 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
         // A few errors (e.g. a lost sync) recover with a keyframe; repeated errors mean this device
         // can't decode the stream, so hand back to Standard video instead of looping.
         const t = performance.now();
-        errors = errors.filter((e) => t - e < 5000).concat(t);
-        if (errors.length > 3) return giveUp();
-        waitingForKey = true;
-        askKeyframe();
-        if (config) {
-          makeDecoder();
-          const { descriptionText, ...decoderConfig } = config;
-          try { decoder.configure(decoderConfig); } catch { giveUp(); }
+        const systemClosedIt = suspended || document.hidden || t - resumedAt < 3000;
+        if (!systemClosedIt) {
+          errors = errors.filter((e) => t - e < 5000).concat(t);
+          if (errors.length > 3) return giveUp();
         }
+        if (!suspended) restart();
       },
     });
+  }
+
+  // A fresh decoder for the current stream, waiting for the next keyframe.
+  function restart() {
+    if (!config) return;
+    makeDecoder();
+    const { descriptionText, ...decoderConfig } = config;
+    try {
+      decoder.configure(decoderConfig);
+    } catch {
+      return giveUp();
+    }
+    waitingForKey = true;
+    lastKeyAsk = 0;
+    askKeyframe();
   }
 
   function onConfig(msg) {
@@ -261,6 +288,9 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
   }
 
   function deliver(data, info) {
+    if (suspended) return;
+    // Closed by the system (e.g. memory pressure) without an error: start over instead of freezing.
+    if (decoder?.state === 'closed') return restart();
     if (!decoder || decoder.state !== 'configured') return;
     // Falling behind: skip to the next keyframe instead of decoding a backlog that only adds delay.
     const offsetMs = clockOffset();
@@ -314,6 +344,18 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
         (stats.dropped ? ` · skipped ${stats.dropped}` : '');
       Object.assign(stats, { frames: 0, bytes: 0, delay: 0, dropped: 0, since: performance.now() });
       return text;
+    },
+    // Safari went to the background / came back.
+    suspend() {
+      suspended = true;
+      if (decoder && decoder.state !== 'closed') decoder.close();
+    },
+    resume() {
+      if (!suspended) return;
+      suspended = false;
+      resumedAt = performance.now();
+      errors = [];
+      restart();
     },
     close() {
       if (decoder && decoder.state !== 'closed') decoder.close();

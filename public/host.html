@@ -497,6 +497,12 @@
           channel.send(JSON.stringify({ t: 'pong', c: msg.c, h: performance.timeOrigin + performance.now() }));
         } else if (msg.t === 'keyframe') {
           turboSender?.requestKeyframe();
+        } else if (msg.t === 'pause') {
+          turboSender?.pause(true);
+        } else if (msg.t === 'resume') {
+          // Back from the background: carry on, or try Turbo again if it fell back to Standard meanwhile.
+          if (turboSender) turboSender.pause(false);
+          else maybeStartTurbo();
         } else if (msg.t === 'turbo-failed') {
           fallbackToStandard(new Error('phone cannot decode Turbo video'));
         } else onInput(msg);
