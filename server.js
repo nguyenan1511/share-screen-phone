@@ -4,7 +4,7 @@
 import http from 'node:http';
 import { execFile, spawn } from 'node:child_process';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { readFile, stat, mkdir } from 'node:fs/promises';
+import { appendFile, readFile, rename, stat, mkdir } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { networkInterfaces } from 'node:os';
 import { extname, join, normalize, sep } from 'node:path';
@@ -589,6 +589,62 @@ async function serveStatic(res, pathname) {
   }
 }
 
+// ---- Session log (to find what slows a long session down) ----
+// The Tether app sets TETHER_LOG_FILE (~/Library/Logs/Tether/session.log on a Mac). One JSON line per entry:
+// the laptop page's and the iPhone's numbers and events (POST /api/log), this server's and the helpers' memory and
+// CPU every 10 s, and the app's own processes (desktop/main.js, via globalThis.tetherLog). Kept under ~2 × 5 MB.
+const LOG_FILE = process.env.TETHER_LOG_FILE || '';
+const LOG_MAX_BYTES = 5 * 1024 * 1024;
+let logQueue = Promise.resolve();
+function tetherLog(entry) {
+  if (!LOG_FILE) return;
+  const line = `${JSON.stringify({ t: new Date().toISOString(), ...entry })}\n`;
+  logQueue = logQueue.then(async () => {
+    const size = await stat(LOG_FILE).then((s) => s.size).catch(() => 0);
+    if (size > LOG_MAX_BYTES) await rename(LOG_FILE, `${LOG_FILE}.1`).catch(() => {});
+    await appendFile(LOG_FILE, line).catch(() => {});
+  });
+}
+globalThis.tetherLog = tetherLog;
+
+// CPU % and memory of a child process (the macOS helper, the Windows input helper).
+const processUsage = (pid) => new Promise((resolve) => {
+  if (!pid || process.platform === 'win32') return resolve(null);
+  execFile('/bin/ps', ['-o', 'rss=,%cpu=', '-p', String(pid)], (err, out) => {
+    const [rss, cpu] = String(out).trim().split(/\s+/).map(Number);
+    resolve(err || !rss ? null : { memMB: Math.round(rss / 1024), cpu });
+  });
+});
+
+if (LOG_FILE) {
+  mkdir(join(LOG_FILE, '..'), { recursive: true }).catch(() => {});
+  tetherLog({ src: 'server', event: 'start', platform: process.platform, node: process.version });
+  let lastCpu = process.cpuUsage(), lastAt = Date.now();
+  setInterval(async () => {
+    const cpu = process.cpuUsage(), at = Date.now();
+    const cpuPct = Math.round(((cpu.user - lastCpu.user + cpu.system - lastCpu.system) / 1000 / (at - lastAt)) * 100);
+    [lastCpu, lastAt] = [cpu, at];
+    const mem = process.memoryUsage();
+    tetherLog({
+      src: 'server', cpu: cpuPct, memMB: Math.round(mem.rss / 1e6), heapMB: Math.round(mem.heapUsed / 1e6),
+      rooms: rooms.size, cursorStreams: cursorStreams.size, phoneCursorStreams: phoneCursorStreams.size,
+      helper: helper?.info ? await processUsage(helper.proc.pid) : null,
+    });
+  }, 10_000).unref();
+}
+
+async function handleLog(req, res) {
+  if (!isLaptop(req)) return json(res, 403, { error: 'laptop only' });
+  let body;
+  try {
+    body = JSON.parse(await readBody(req));
+  } catch {
+    return json(res, 400, { error: 'body must be JSON' });
+  }
+  if (body && typeof body === 'object') tetherLog({ src: 'page', ...body });
+  json(res, 200, { ok: true });
+}
+
 // ---- Download links (/download/mac, /download/mac-intel, /download/windows) ----
 // S3 keeps each release only in its version folder (mac/<version>/, windows/<version>/), so the website links
 // here: read the current latest.json and send the browser to that version's installer.
@@ -674,6 +730,7 @@ const server = http.createServer(async (req, res) => {
     }
     // Awaited so a failure inside lands in the catch below instead of crashing the server.
     if (url.pathname === '/api/display') return await handleDisplay(req, res, url);
+    if (req.method === 'POST' && url.pathname === '/api/log') return await handleLog(req, res);
     if (req.method === 'GET' && url.pathname === '/api/cursor') return openCursorStream(req, res);
     if (req.method === 'GET' && url.pathname === '/api/cursor-live') return openPhoneCursorStream(req, res);
     if (req.method === 'POST' && url.pathname === '/api/input') return await handleInput(req, res);

@@ -409,10 +409,12 @@
 
     async function onMessage(msg) {
       if (msg.type === 'peer-joined' && msg.role === 'viewer') {
+        logEvent('phone-joined');
         viewerPresent = true;
         $('viewerState').textContent = 'joined';
         await startCall();
       } else if (msg.type === 'peer-left' && msg.role === 'viewer') {
+        logEvent('phone-left');
         viewerPresent = false;
         $('viewerState').textContent = 'left';
         closePeer();
@@ -475,6 +477,7 @@
       if (!outTrack()) return closePeer();
       $('pcState').textContent = 'offering…';
       pc.onconnectionstatechange = () => {
+        logEvent('connection', { state: pc.connectionState });
         $('pcState').textContent = pc.connectionState;
         signaling.setPace(pc.connectionState === 'connected' ? 4000 : 'fast');
       };
@@ -497,13 +500,18 @@
           channel.send(JSON.stringify({ t: 'pong', c: msg.c, h: performance.timeOrigin + performance.now() }));
         } else if (msg.t === 'keyframe') {
           turboSender?.requestKeyframe();
+        } else if (msg.t === 'health') {
+          phoneHealth = msg;
         } else if (msg.t === 'pause') {
+          logEvent('phone-background');
           turboSender?.pause(true);
         } else if (msg.t === 'resume') {
+          logEvent('phone-back', { turbo: Boolean(turboSender) });
           // Back from the background: carry on, or try Turbo again if it fell back to Standard meanwhile.
           if (turboSender) turboSender.pause(false);
           else maybeStartTurbo();
         } else if (msg.t === 'turbo-failed') {
+          logEvent('phone-turbo-failed');
           fallbackToStandard(new Error('phone cannot decode Turbo video'));
         } else onInput(msg);
       };
@@ -557,6 +565,7 @@
           onError: (err) => fallbackToStandard(err),
         });
         await sender?.replaceTrack(null); // stop the regular video, Turbo carries the picture now
+        logEvent('turbo-start', { quality: $('quality').value });
         if (channel?.readyState === 'open') channel.send(JSON.stringify({ t: 'engine', value: 'turbo' }));
       } catch (err) {
         fallbackToStandard(err);
@@ -572,6 +581,7 @@
 
     async function fallbackToStandard(err) {
       if (err) console.warn('Turbo off, using Standard video:', err);
+      logEvent('standard-video', { reason: err ? String(err.message || err) : 'chosen' });
       stopTurbo();
       if (sender && outTrack()) await sender.replaceTrack(outTrack()).catch(() => {});
       if (channel?.readyState === 'open') channel.send(JSON.stringify({ t: 'engine', value: 'standard' }));
@@ -613,6 +623,7 @@
       displayTrack = displayStream.getVideoTracks()[0];
       applyQuality();
       displayTrack.onended = stop;
+      logEvent('share-start', { surface: displayTrack.getSettings().displaySurface, mode: mode() });
       const surface = displayTrack.getSettings().displaySurface;
       $('shareState').textContent = `sharing ${surface ?? 'screen'}`;
       displayTrack.addEventListener('settingschange', sendControlState);
@@ -625,6 +636,7 @@
     }
 
     function stop() {
+      if (displayTrack) logEvent('share-stop');
       displayStream?.getTracks().forEach((t) => t.stop());
       zoneTrack?.stop();
       displayStream = displayTrack = zoneTrack = null;
@@ -774,6 +786,30 @@
         await new Promise((r) => setTimeout(r, 1000));
       }
     }
+
+    // ---- Session log (written by the app to ~/Library/Logs/Tether/session.log; see server.js) ----
+    // Only where this page runs on the laptop itself (the app, npm start); the public site has no log.
+    let phoneHealth = null;
+    function logEvent(event, data = {}) {
+      if (document.body.classList.contains('hosted')) return;
+      fetch('/api/log', { method: 'POST', body: JSON.stringify({ event, ...data }) }).catch(() => {});
+    }
+    setInterval(() => {
+      if (!displayTrack && !viewerPresent) return; // nothing going on
+      const settings = displayTrack?.getSettings() ?? {};
+      logEvent('tick', {
+        sharing: Boolean(displayTrack),
+        engine: turboSender ? 'turbo' : 'standard',
+        capture: displayTrack ? `${settings.width}x${settings.height}@${Math.round(settings.frameRate ?? 0)} ${settings.displaySurface ?? ''}` : null,
+        laptop: $('streamStats').textContent,
+        videoBufferedKB: videoChannel ? Math.round(videoChannel.bufferedAmount / 1024) : null,
+        connection: peer?.pc.connectionState ?? null,
+        pageVisible: document.visibilityState,
+        heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1e6) : null,
+        phone: phoneHealth,
+      });
+      phoneHealth = null; // only fresh reports
+    }, 10_000);
 
     // ---- Hidden iPhone screen (virtual display) + remote control ----
     function sharingVirtualDisplay() {

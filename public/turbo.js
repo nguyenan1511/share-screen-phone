@@ -199,6 +199,7 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
   // can decode Turbo, so they don't count, and coming back builds a fresh decoder.
   let suspended = false;
   let resumedAt = 0;
+  const counters = { restarts: 0, keyAsks: 0, decodeErrors: 0, lateSkips: 0, backlogSkips: 0 }; // for the session log
   const giveUp = () => {
     if (gaveUp) return;
     gaveUp = true;
@@ -209,6 +210,7 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
   const askKeyframe = () => {
     if (performance.now() - lastKeyAsk < KEYFRAME_ASK_EVERY_MS) return;
     lastKeyAsk = performance.now();
+    counters.keyAsks++;
     needKeyframe();
   };
 
@@ -235,6 +237,7 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
         // A few errors (e.g. a lost sync) recover with a keyframe; repeated errors mean this device
         // can't decode the stream, so hand back to Standard video instead of looping.
         const t = performance.now();
+        counters.decodeErrors++;
         const systemClosedIt = suspended || document.hidden || t - resumedAt < 3000;
         if (!systemClosedIt) {
           errors = errors.filter((e) => t - e < 5000).concat(t);
@@ -248,6 +251,7 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
   // A fresh decoder for the current stream, waiting for the next keyframe.
   function restart() {
     if (!config) return;
+    counters.restarts++;
     makeDecoder();
     const { descriptionText, ...decoderConfig } = config;
     try {
@@ -296,6 +300,7 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
     const offsetMs = clockOffset();
     const late = offsetMs != null && now() + offsetMs - info.sentAt > MAX_FRAME_AGE_MS;
     if (!info.key && (late || decoder.decodeQueueSize > MAX_DECODE_QUEUE)) {
+      counters[late ? 'lateSkips' : 'backlogSkips']++;
       waitingForKey = true;
       stats.dropped++;
       askKeyframe();
@@ -345,6 +350,8 @@ export function createTurboReceiver({ canvas, clockOffset, onFrame = () => {}, n
       Object.assign(stats, { frames: 0, bytes: 0, delay: 0, dropped: 0, since: performance.now() });
       return text;
     },
+    // Totals since this receiver started, for the session log.
+    counters: () => ({ ...counters, queue: decoder?.decodeQueueSize ?? null, decoder: decoder?.state ?? null }),
     // Safari went to the background / came back.
     suspend() {
       suspended = true;

@@ -22,6 +22,8 @@ if (app.isPackaged && isWindows) process.env.TETHER_WIN_INPUT ||= path.join(proc
 // which borrow Terminal's permission).
 if (app.isPackaged && isMac) process.env.TETHER_APP_ID ||= 'com.nguyenan.tether';
 process.env.PORT ||= '3001';
+// Session log (server.js): ~/Library/Logs/Tether/session.log on a Mac, %APPDATA%\Tether\logs on Windows.
+process.env.TETHER_LOG_FILE ||= path.join(app.getPath('logs'), 'session.log');
 
 await import('../server.js');
 const serverReady = globalThis.tetherServerReady;
@@ -207,7 +209,26 @@ app.on('second-instance', () => {
 // (the server's exit handler removes the iPhone screen and brings the cursor home).
 app.on('window-all-closed', () => app.quit());
 
+// Every 10 s: CPU and memory of each of the app's processes (main, GPU, the page, utilities), to spot one that
+// grows over a long session.
+function logAppMetrics() {
+  const byType = {};
+  for (const m of app.getAppMetrics()) {
+    const t = (byType[m.type] ||= { cpu: 0, memMB: 0, n: 0 });
+    t.cpu += m.cpu?.percentCPUUsage ?? 0;
+    t.memMB += (m.memory?.workingSetSize ?? 0) / 1024;
+    t.n++;
+  }
+  for (const t of Object.values(byType)) {
+    t.cpu = Math.round(t.cpu);
+    t.memMB = Math.round(t.memMB);
+  }
+  globalThis.tetherLog?.({ src: 'app', version: app.getVersion(), napBlocked: napBlocker !== null, visible: Boolean(win?.isVisible()), focused: Boolean(win?.isFocused()), processes: byType });
+}
+
 app.whenReady().then(() => {
+  globalThis.tetherLog?.({ src: 'app', event: 'start', version: app.getVersion(), platform: process.platform, arch: process.arch });
+  setInterval(logAppMetrics, 10_000);
   cleanUpOldVersions().catch(() => {});
   return openWindow();
 });

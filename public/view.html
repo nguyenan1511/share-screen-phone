@@ -290,6 +290,20 @@
       if (turboActive && turbo) $('stats').textContent = turbo.readStats() + cursorDelay.text;
     }, 1000);
 
+    // Session log: every 5 s the phone tells the laptop what it sees (the laptop app writes it to its log file).
+    setInterval(() => {
+      if (channel?.readyState !== 'open') return;
+      sendRaw({
+        t: 'health',
+        engine: turboActive ? 'turbo' : 'standard',
+        stats: $('stats').textContent,
+        visible: document.visibilityState === 'visible',
+        connection: peer?.pc.connectionState ?? null,
+        turbo: turbo?.counters() ?? null,
+        screen: `${screen.width}x${screen.height}@${devicePixelRatio}`,
+      });
+    }, 5000);
+
     function endTurbo() {
       turbo?.close();
       turbo = null;
